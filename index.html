@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Church Live — Livestream Dashboard</title>
+  <!-- Google Fonts for a clean, welcoming, and modern typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo-section">
+        <span class="church-icon">⛪</span>
+        <div>
+          <h1 class="logo-title">CHURCH LIVE</h1>
+          <p class="logo-subtitle">Livestream Control Center</p>
+        </div>
+      </div>
+      <div class="user-badge">
+        <span class="badge-dot pulse"></span>
+        <span class="badge-role">Volunteer Mode</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="dashboard-container">
+    
+    <!-- Left Column: Settings and Setup Form -->
+    <section class="setup-column">
+      
+      <!-- System Status Checkcard -->
+      <div class="card status-card">
+        <div class="card-header">
+          <h2 class="card-title">SYSTEM STATUS</h2>
+          <span class="status-badge" id="overall-status">CHECKING...</span>
+        </div>
+        <p class="card-instruction">Ensure all indicators are green (🟢) before going live. Click on any status to toggle/simulate its hardware connection.</p>
+        
+        <ul class="status-list">
+          <li class="status-item" id="status-camera" data-checked="true">
+            <div class="status-item-left">
+              <span class="item-icon">📷</span>
+              <div class="item-info">
+                <span class="item-name">Camera Connection</span>
+                <span class="item-detail">Panasonic HC-MD12M via USB Capture</span>
+              </div>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot green-dot"></span>
+              <span class="status-text">CONNECTED</span>
+            </div>
+          </li>
+          
+          <li class="status-item" id="status-audio" data-checked="true">
+            <div class="status-item-left">
+              <span class="item-icon">🎤</span>
+              <div class="item-info">
+                <span class="item-name">Audio Input</span>
+                <span class="item-detail">Yamaha MG16XU USB Audio Mixer</span>
+              </div>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot green-dot"></span>
+              <span class="status-text">CONNECTED</span>
+            </div>
+          </li>
+          
+          <li class="status-item" id="status-internet" data-checked="true">
+            <div class="status-item-left">
+              <span class="item-icon">🌐</span>
+              <div class="item-info">
+                <span class="item-name">Internet Speed</span>
+                <span class="item-detail">High speed fibre connection</span>
+              </div>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot green-dot"></span>
+              <span class="status-text">STABLE</span>
+            </div>
+          </li>
+
+          <li class="status-item" id="status-encoder" data-checked="false">
+            <div class="status-item-left">
+              <span class="item-icon">💻</span>
+              <div class="item-info">
+                <span class="item-name">Encoder Software</span>
+                <span class="item-detail">OBS Studio WebSocket link</span>
+              </div>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot red-dot"></span>
+              <span class="status-text">OFFLINE</span>
+            </div>
+          </li>
+
+          <li class="status-item" id="status-youtube" data-checked="false">
+            <div class="status-item-left">
+              <span class="item-icon">🎥</span>
+              <div class="item-info">
+                <span class="item-name">YouTube Channel</span>
+                <span class="item-detail">Livestream API Connection</span>
+              </div>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot red-dot"></span>
+              <span class="status-text">UNPREPARED</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Service Config Form Card -->
+      <div class="card service-card">
+        <div class="card-header">
+          <h2 class="card-title">TODAY'S SERVICE</h2>
+          <button class="btn-text" id="btn-load-template">Load Default Template</button>
+        </div>
+        <form id="service-form" novalidate>
+          <div class="form-group">
+            <label for="service-title">Service Title</label>
+            <input type="text" id="service-title" placeholder="e.g. Sunday Worship Service" value="Sunday Worship Service" required>
+            <p class="form-help">Enter a welcoming title for the livestream broadcast.</p>
+          </div>
+          
+          <div class="form-group">
+            <label for="service-description">Description</label>
+            <textarea id="service-description" rows="3" placeholder="Enter service description..." required>Welcome to our Sunday service livestream! Join us as we sing praises, listen to the Word, and fellowship together.</textarea>
+            <p class="form-help">This description will show up directly on YouTube for viewers.</p>
+          </div>
+
+          <div class="form-group">
+            <label for="service-time">Scheduled Time</label>
+            <input type="datetime-local" id="service-time" required>
+            <p class="form-help">Select the date and starting time for the broadcast.</p>
+          </div>
+
+          <div class="action-section">
+            <button type="submit" id="btn-prepare" class="btn btn-primary">
+              <span class="btn-icon">⚡</span> PREPARE LIVESTREAM
+            </button>
+          </div>
+        </form>
+      </div>
+
+    </section>
+
+    <!-- Right Column: Control Console & Archives -->
+    <section class="control-column">
+
+      <!-- Stream Prep Stage Console (Active Workflow) -->
+      <div class="card preparation-console disabled" id="prep-console">
+        <div class="card-header">
+          <h2 class="card-title">LIVESTREAM MANAGER</h2>
+          <span class="badge" id="prep-badge">Inactive</span>
+        </div>
+        <div class="console-body">
+          <div class="console-placeholder" id="console-placeholder">
+            <div class="placeholder-graphic">📡</div>
+            <h3>Waiting for Preparation</h3>
+            <p>Fill out today's service details and click <strong>Prepare Livestream</strong> to initiate the stream workspace.</p>
+          </div>
+          
+          <div class="console-active-flow hidden" id="console-flow">
+            <div class="active-header">
+              <div class="stream-preview-box">
+                <div class="preview-feed-sim">
+                  <span class="camera-lens">⬤</span>
+                  <p class="feed-sim-text">READY TO BROADCAST</p>
+                </div>
+              </div>
+              <div class="stream-meta-summary">
+                <h3 id="flow-title">Sunday Worship Service</h3>
+                <p id="flow-time">Scheduled for: --:--</p>
+                <div class="stream-key-indicator">
+                  <span class="stream-key-label">RTMP Stream Key:</span>
+                  <span class="stream-key-mask">•••• •••• •••• 92j3</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="checklist-guide">
+              <h4>Prerequisites Check</h4>
+              <ul class="guide-steps">
+                <li class="guide-step checked" id="step-form-valid">
+                  <span class="step-check-mark">✓</span> Service Information Saved
+                </li>
+                <li class="guide-step" id="step-encoder-link">
+                  <span class="step-check-mark">✓</span> Local OBS Link Ready
+                </li>
+                <li class="guide-step" id="step-yt-ready">
+                  <span class="step-check-mark">✓</span> YouTube Broadcast Scheduled
+                </li>
+              </ul>
+            </div>
+
+            <div class="stream-action-buttons">
+              <button class="btn btn-secondary btn-full" id="btn-simulate-yt-link">
+                🔗 Simulate API Connect (Prepare OBS & YT)
+              </button>
+              <button class="btn btn-success btn-full hidden" id="btn-start-stream">
+                🔴 START LIVESTREAM NOW
+              </button>
+              <button class="btn btn-danger btn-full hidden" id="btn-stop-stream">
+                ⏹ END LIVESTREAM
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Services Log Table -->
+      <div class="card logs-card">
+        <div class="card-header">
+          <h2 class="card-title">RECENT SERVICES</h2>
+          <span class="badge badge-light" id="history-count">3 archived</span>
+        </div>
+        
+        <div class="table-responsive">
+          <table class="services-table" id="recent-services-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Service</th>
+                <th>Status</th>
+                <th>YouTube Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Row 1 -->
+              <tr>
+                <td class="cell-date">
+                  <div class="primary-text">13 Sep 2026</div>
+                  <div class="secondary-text">09:30 AM</div>
+                </td>
+                <td class="cell-service">
+                  <div class="primary-text">Sunday Divine Liturgy</div>
+                  <div class="secondary-text">Pentecost / Trinity Sunday</div>
+                </td>
+                <td>
+                  <span class="service-status-pill status-completed">Completed</span>
+                </td>
+                <td class="cell-yt">
+                  <a href="https://youtube.com/watch?v=mock_id_01" target="_blank" class="yt-link">
+                    <span class="yt-icon">▶</span> watch archive
+                  </a>
+                </td>
+              </tr>
+              <!-- Row 2 -->
+              <tr>
+                <td class="cell-date">
+                  <div class="primary-text">06 Sep 2026</div>
+                  <div class="secondary-text">09:30 AM</div>
+                </td>
+                <td class="cell-service">
+                  <div class="primary-text">Sunday Morning Worship</div>
+                  <div class="secondary-text">Special Choir Appreciation</div>
+                </td>
+                <td>
+                  <span class="service-status-pill status-completed">Completed</span>
+                </td>
+                <td class="cell-yt">
+                  <a href="https://youtube.com/watch?v=mock_id_02" target="_blank" class="yt-link">
+                    <span class="yt-icon">▶</span> watch archive
+                  </a>
+                </td>
+              </tr>
+              <!-- Row 3 -->
+              <tr>
+                <td class="cell-date">
+                  <div class="primary-text">30 Aug 2026</div>
+                  <div class="secondary-text">09:30 AM</div>
+                </td>
+                <td class="cell-service">
+                  <div class="primary-text">Sunday Praise & Sermon</div>
+                  <div class="secondary-text">Guest Pastor Thomas Miller</div>
+                </td>
+                <td>
+                  <span class="service-status-pill status-completed">Completed</span>
+                </td>
+                <td class="cell-yt">
+                  <a href="https://youtube.com/watch?v=mock_id_03" target="_blank" class="yt-link">
+                    <span class="yt-icon">▶</span> watch archive
+                  </a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p><strong>Church Live</strong> version 1.0.0 (Phase 1 Prototype)</p>
+      <p class="tech-stack-info">Designed using standard Web Stack (HTML, CSS, JS) ready for Supabase Cloud integration and GitHub Pages hosting.</p>
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
