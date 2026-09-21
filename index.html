@@ -31,7 +31,30 @@
     </div>
   </header>
 
-  <main class="dashboard-container">
+  <!-- Login Section (Phase 4B-1) -->
+  <section id="login-section" class="login-section">
+    <div class="login-container">
+      <div class="login-header">
+        <h1>Church Live</h1>
+        <p>Livestream Dashboard</p>
+      </div>
+      <form id="login-form" class="login-form">
+        <div class="form-group">
+          <label for="login-email">Email Address</label>
+          <input type="email" id="login-email" name="email" required placeholder="Enter your email">
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" name="password" required placeholder="Enter your password">
+        </div>
+        <div id="login-error" class="login-error"></div>
+        <button type="submit" id="login-button" class="login-button">Sign In</button>
+      </form>
+      <button id="logout-button" class="logout-button" style="display: none;">Log Out</button>
+    </div>
+  </section>
+
+  <main class="dashboard-container" id="main-dashboard">
     
     <!-- Left Column: Settings and Setup Form -->
     <section class="setup-column">

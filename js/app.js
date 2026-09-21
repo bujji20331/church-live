@@ -71,7 +71,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Services Table & Count
     recentServicesTable: document.getElementById('recent-services-table').querySelector('tbody'),
-    historyCount: document.getElementById('history-count')
+    historyCount: document.getElementById('history-count'),
+
+    // Login UI
+    loginSection: document.getElementById('login-section'),
+    loginForm: document.getElementById('login-form'),
+    loginEmail: document.getElementById('login-email'),
+    loginPassword: document.getElementById('login-password'),
+    loginButton: document.getElementById('login-button'),
+    loginError: document.getElementById('login-error'),
+    logoutButton: document.getElementById('logout-button'),
+    mainDashboard: document.getElementById('main-dashboard')
   };
 
   // ==========================================================================
@@ -96,9 +106,121 @@ document.addEventListener('DOMContentLoaded', () => {
     const formattedDate = `${nextSunday.getFullYear()}-${pad(nextSunday.getMonth() + 1)}-${pad(nextSunday.getDate())}T${pad(nextSunday.getHours())}:${pad(nextSunday.getMinutes())}`;
     elements.serviceTime.value = formattedDate;
   }
-  initDefaults();
-  updateStatusUI();
-  initSupabaseAndLoadEvents();
+     initDefaults();
+
+   // ==========================================================================
+   // 4. AUTHENTICATION GATING
+   // ==========================================================================
+   let isAuthenticatedAndActive = false;
+
+   async function checkAuthenticationAndLoad() {
+     const session = getSession();
+     if (!session) {
+       // No authenticated session - skip private data loading
+       console.log('[Church Live] No authenticated session - showing login');
+       showLoginSection();
+       return;
+     }
+
+     // Authenticated session - verify profile
+     const profile = await getCurrentProfile();
+     if (!profile || !profile.success || profile.data?.is_active !== true ||
+         (profile.data?.role !== 'SUPER_ADMIN' && profile.data?.role !== 'ADMIN')) {
+       console.log('[Church Live] Insufficient permissions - showing login');
+       showLoginSection();
+       return;
+     }
+
+     console.log('[Church Live] Authenticated user with valid role - loading private data');
+     isAuthenticatedAndActive = true;
+     showDashboardSection();
+     initSupabaseAndLoadEvents();
+   }
+
+   updateStatusUI();
+
+   // Only load private data after successful authentication and profile validation
+   checkAuthenticationAndLoad();
+
+  // ==========================================================================
+  // 5. AUTH STATE LISTENER
+  // ==========================================================================
+  // Register the Supabase auth state change listener to handle login/logout/session changes
+  const unsubscribe = onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      console.log('[Church Live] User logged in');
+      await validateSessionAndShowDashboard();
+    } else if (event === 'SIGNED_OUT') {
+      console.log('[Church Live] User logged out');
+      isAuthenticatedAndActive = false;
+      showLoginSection();
+    } else if (session) {
+      console.log('[Church Live] Auth state changed - updating UI');
+    }
+  });
+
+  let authenticationCheckPromise = null;
+
+  async function validateSessionAndShowDashboard() {
+    if (authenticationCheckPromise) {
+      return authenticationCheckPromise;
+    }
+
+    authenticationCheckPromise = (async () => {
+      const profile = await getCurrentProfile();
+      const hasActiveAdminProfile = profile && profile.success &&
+        profile.data?.is_active === true &&
+        (profile.data?.role === 'SUPER_ADMIN' || profile.data?.role === 'ADMIN');
+
+      if (!hasActiveAdminProfile) {
+        isAuthenticatedAndActive = false;
+        elements.loginError.textContent = '⚠️ Your account is not active or does not have permission to access the dashboard.';
+        showLoginSection();
+        return false;
+      }
+
+      isAuthenticatedAndActive = true;
+      showDashboardSection();
+      initSupabaseAndLoadEvents();
+      return true;
+    })();
+
+    try {
+      return await authenticationCheckPromise;
+    } finally {
+      authenticationCheckPromise = null;
+    }
+  }
+
+  /**
+   * Show the login section and hide the dashboard.
+   */
+  function showLoginSection() {
+    if (elements.loginSection) {
+      elements.loginSection.style.display = '';
+    }
+    if (elements.mainDashboard) {
+      elements.mainDashboard.style.display = 'none';
+    }
+    if (elements.logoutButton) {
+      elements.logoutButton.style.display = 'none';
+    }
+  }
+
+  /**
+   * Show the dashboard and hide the login section.
+   */
+  function showDashboardSection() {
+    if (elements.loginSection) {
+      elements.loginSection.style.display = 'none';
+    }
+    if (elements.mainDashboard) {
+      elements.mainDashboard.style.display = '';
+    }
+    if (elements.logoutButton) {
+      elements.logoutButton.style.display = 'inline-block';
+    }
+  }
 
   // ==========================================================================
   // 4. FUNCTION DEFINITIONS
@@ -545,5 +667,58 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatusUI();
 
     alert('🎉 Awesome! The livestream session has ended. Today\'s service record has been saved successfully in local history.');
+  });
+
+  // G. LOGIN Form Submission
+  elements.loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const email = elements.loginEmail.value.trim();
+    const password = elements.loginPassword.value;
+
+    elements.loginError.textContent = '';
+
+    if (!email || !password) {
+      elements.loginError.textContent = '⚠️ Please enter your email and password.';
+      return;
+    }
+
+    elements.loginButton.disabled = true;
+    elements.loginButton.textContent = 'Signing In...';
+
+    const result = await window.churchLiveSupabase.auth.login(email, password);
+
+    if (!result.success) {
+      elements.loginError.textContent = `❌ ${result.error?.message || 'Login failed. Please try again.'}`;
+      elements.loginButton.disabled = false;
+      elements.loginButton.textContent = 'Sign In';
+      return;
+    }
+
+    const profileValidated = await validateSessionAndShowDashboard();
+
+    if (!profileValidated) {
+      elements.loginButton.disabled = false;
+      elements.loginButton.textContent = 'Sign In';
+      return;
+    }
+
+    elements.loginButton.disabled = false;
+    elements.loginButton.textContent = 'Sign In';
+    elements.loginEmail.value = '';
+    elements.loginPassword.value = '';
+  });
+
+  // H. LOGOUT Button
+  elements.logoutButton.addEventListener('click', async () => {
+    const result = await window.churchLiveSupabase.auth.logout();
+
+    if (!result.success) {
+      elements.loginError.textContent = `❌ ${result.error?.message || 'Logout failed. Please try again.'}`;
+      return;
+    }
+
+    isAuthenticatedAndActive = false;
+    showLoginSection();
   });
 });

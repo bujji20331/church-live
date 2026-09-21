@@ -511,6 +511,166 @@ if (typeof window !== 'undefined' && typeof supabase !== 'undefined' && typeof w
   window.supabase = supabase;
 }
 
+// =============================================================================
+// Authentication (Phase 4B-1)
+// =============================================================================
+
+/**
+ * Get the current Supabase session.
+ * @returns {Object|null} The session object or null
+ */
+function getSession() {
+  if (!isSupabaseReady()) {
+    return null;
+  }
+  return supabaseClient.auth.getSession()?.data?.session || null;
+}
+
+/**
+ * Get the current authenticated user.
+ * @returns {Object|null} The user object or null
+ */
+function getCurrentUser() {
+  if (!isSupabaseReady()) {
+    return null;
+  }
+  return supabaseClient.auth.getUser()?.data?.user || null;
+}
+
+/**
+ * Check if the user is authenticated.
+ * @returns {Promise<boolean>}
+ */
+async function isAuthenticated() {
+  const session = getSession();
+  if (!session) {
+    return false;
+  }
+  // Also verify profile exists and is active
+  const profile = await getProfile(session.user.id);
+  return profile.success && profile.data?.is_active === true;
+}
+
+/**
+ * Login with email and password.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<Object>} { success, data, error }
+ */
+async function login(email, password) {
+  if (!isSupabaseReady()) {
+    return { success: false, data: null, error: { message: 'Supabase is not connected.' } };
+  }
+
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+
+    if (error) {
+      console.error('[Church Live] Login failed:', error.message);
+      return { success: false, data: null, error };
+    }
+
+    console.log('[Church Live] User logged in:', data.user?.email);
+    return { success: true, data, error: null };
+  } catch (error) {
+    console.error('[Church Live] Login error:', error);
+    return { success: false, data: null, error };
+  }
+}
+
+/**
+ * Logout the current user.
+ * @returns {Promise<Object>} { success, error }
+ */
+async function logout() {
+  if (!isSupabaseReady()) {
+    return { success: true, error: null };
+  }
+
+  try {
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) {
+      console.error('[Church Live] Logout failed:', error.message);
+      return { success: false, error };
+    }
+
+    console.log('[Church Live] User logged out.');
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('[Church Live] Logout error:', error);
+    return { success: false, error };
+  }
+}
+
+/**
+ * Get the user's profile from the profiles table.
+ * @param {string} userId - The auth.user id
+ * @returns {Promise<Object>} { success, data, error }
+ */
+async function getProfile(userId) {
+  if (!isSupabaseReady()) {
+    return { success: false, data: null, error: { message: 'Supabase is not connected.' } };
+  }
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) throw error;
+    return { success: true, data, error: null };
+  } catch (error) {
+    console.error('[Church Live] Failed to load profile:', error);
+    return { success: false, data: null, error };
+  }
+}
+
+/**
+ * Get the current user's profile using the active session.
+ * @returns {Promise<Object>} { success, data, error }
+ */
+async function getCurrentProfile() {
+  if (!isSupabaseReady()) {
+    return { success: false, data: null, error: { message: 'Supabase is not connected.' } };
+  }
+
+  const user = getCurrentUser();
+  if (!user) {
+    return { success: false, data: null, error: { message: 'No authenticated user.' } };
+  }
+
+  return getProfile(user.id);
+}
+
+/**
+ * Set up auth state change listener.
+ * @param {Function} callback - Called with (event, session) on auth changes
+ * @returns {Function} Unsubscribe function
+ */
+function onAuthStateChange(callback) {
+  if (!isSupabaseReady()) {
+    return function() {};
+  }
+
+  const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
+    console.log('[Church Live] Auth state changed:', event);
+    callback(event, session);
+  });
+
+  return function() {
+    subscription.unsubscribe();
+  };
+}
+
+// =============================================================================
+// Export
+// =============================================================================
+
 /**
  * Export the Supabase module
  */
@@ -520,6 +680,18 @@ window.churchLiveSupabase = {
   getClient: getSupabaseClient,
   isReady: isSupabaseReady,
   getError: getSupabaseConnectionError,
+
+  // Authentication (Phase 4B-1)
+  auth: {
+    login: login,
+    logout: logout,
+    getSession: getSession,
+    getUser: getCurrentUser,
+    getProfile: getProfile,
+    getCurrentProfile: getCurrentProfile,
+    isAuthenticated: isAuthenticated,
+    onAuthStateChange: onAuthStateChange
+  },
 
   // Data access (Phase 3)
   churchSettings: {

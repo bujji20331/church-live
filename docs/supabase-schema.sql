@@ -259,6 +259,171 @@ WITH CHECK (true);
 -- administrators in future phases.
 -- -----------------------------------------------------------------------------
 
+-- =============================================================================\n-- 5. PROFILES (Phase 4B-1)\n-- =============================================================================\n\n-- User profile table linked to Supabase Auth.\n-- Each authenticated user must have exactly one profile row.\n-- RLS is enforced so that only active SUPER_ADMIN or ADMIN users can access\n-- private data (events, church_settings, system_logs, profiles).\n\nCREATE TABLE IF NOT EXISTS profiles (\n  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,\n  role TEXT NOT NULL CHECK (role IN ('SUPER_ADMIN','ADMIN')),\n  is_active BOOLEAN NOT NULL DEFAULT true,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCOMMENT ON TABLE profiles IS\n  'User profiles for Church Live. Linked 1:1 to auth.users. Contains role and active status used for authorization.';\n\nCOMMENT ON COLUMN profiles.role IS\n  'Role of the user: SUPER_ADMIN (full access) or ADMIN (limited access).';\n\nCOMMENT ON COLUMN profiles.is_active IS\n  'Whether the user account is currently active. Inactive users cannot access private data.';\n\nCREATE TRIGGER profiles_updated_at\nBEFORE UPDATE ON profiles\nFOR EACH ROW\nEXECUTE FUNCTION update_updated_at_column();\n\n-- =============================================================================\n-- 6. SECURITY DEFINER HELPER (avoids recursive RLS on profiles)\n-- =============================================================================\n\n-- This function securely returns the current authenticated user's role.\n-- It uses SECURITY DEFINER with a fixed search_path to prevent recursion\n-- and ensure that role checks cannot be bypassed by manipulating RLS policies.\n\nCREATE OR REPLACE FUNCTION get_current_user_role()\nRETURNS TEXT\nLANGUAGE sql\nSECURITY DEFINER\nSET search_path = public, pg_catalog\nAS $$\n  SELECT role\n  FROM profiles\n  WHERE id = auth.uid()\n  LIMIT 1\n$$;\n
+-- =============================================================================
+-- 7. ROW LEVEL SECURITY (RLS) — Phase 4B-1
+-- =============================================================================
+--
+-- IMPORTANT:
+-- - Anonymous (anon) users have NO access to any private table.
+-- - Only authenticated users with an ACTIVE profile can access private data.
+-- - SUPER_ADMIN has full access to all tables.
+-- - ADMIN has read/write access to events and church_settings, but CANNOT
+--   modify profiles, promote themselves, or deactivate the SUPER_ADMIN.
+-- - The SECURITY DEFINER function get_current_user_role() is used to avoid
+--   recursive RLS policies on the profiles table.
+--
+-- Enable RLS on all tables.
+-- =============================================================================
+
+ALTER TABLE church_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- ---------------------------------------------------------------------------
+-- profiles
+-- ---------------------------------------------------------------------------
+-- Only SUPER_ADMIN can view or modify profiles.
+-- ADMIN cannot access profiles at all (no self-service role changes).
+-- The SECURITY DEFINER function bypasses RLS for the role check itself.
+
+CREATE POLICY "profiles_select_super_admin"
+ON profiles
+FOR SELECT
+TO authenticated
+USING (get_current_user_role() = 'SUPER_ADMIN');
+
+CREATE POLICY "profiles_insert_super_admin"
+ON profiles
+FOR INSERT
+TO authenticated
+WITH CHECK (get_current_user_role() = 'SUPER_ADMIN');
+
+CREATE POLICY "profiles_update_super_admin"
+ON profiles
+FOR UPDATE
+TO authenticated
+USING (get_current_user_role() = 'SUPER_ADMIN')
+WITH CHECK (get_current_user_role() = 'SUPER_ADMIN');
+
+CREATE POLICY "profiles_delete_super_admin"
+ON profiles
+FOR DELETE
+TO authenticated
+USING (get_current_user_role() = 'SUPER_ADMIN');
+
+-- ---------------------------------------------------------------------------
+-- church_settings
+-- ---------------------------------------------------------------------------
+-- Only active authenticated users (SUPER_ADMIN or ADMIN) can read or update.
+
+CREATE POLICY "church_settings_select_active"
+ON church_settings
+FOR SELECT
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+);
+
+CREATE POLICY "church_settings_update_active"
+ON church_settings
+FOR UPDATE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+);
+
+-- ---------------------------------------------------------------------------
+-- events
+-- ---------------------------------------------------------------------------
+-- Only active authenticated users can read, create, or update events.
+-- No anonymous access.
+-- DELETE is restricted to SUPER_ADMIN only (no anonymous DELETE).
+
+CREATE POLICY "events_select_active"
+ON events
+FOR SELECT
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+);
+
+CREATE POLICY "events_insert_active"
+ON events
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+);
+
+CREATE POLICY "events_update_active"
+ON events
+FOR UPDATE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.is_active = true
+  )
+);
+
+CREATE POLICY "events_delete_super_admin"
+ON events
+FOR DELETE
+TO authenticated
+USING (get_current_user_role() = 'SUPER_ADMIN');
+
+-- ---------------------------------------------------------------------------
+-- system_logs
+-- ---------------------------------------------------------------------------
+-- Only SUPER_ADMIN can read or insert system logs.
+-- ADMIN cannot access logs.
+
+CREATE POLICY "system_logs_select_super_admin"
+ON system_logs
+FOR SELECT
+TO authenticated
+USING (get_current_user_role() = 'SUPER_ADMIN');
+
+CREATE POLICY "system_logs_insert_super_admin"
+ON system_logs
+FOR INSERT
+TO authenticated
+WITH CHECK (get_current_user_role() = 'SUPER_ADMIN');
+
+
 -- =============================================================================
 -- 5. FUTURE EXTENSIONS (NOT IMPLEMENTED IN PHASE 2.5)
 -- =============================================================================
