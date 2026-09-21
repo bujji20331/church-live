@@ -504,6 +504,13 @@ async function addSystemLog(logData) {
   }
 }
 
+// Ensure the global Supabase client is available for downstream code.
+// The CDN bundle may not always expose window.supabase in every context,
+// so explicitly expose it here before module initialization continues.
+if (typeof window !== 'undefined' && typeof supabase !== 'undefined' && typeof window.supabase === 'undefined') {
+  window.supabase = supabase;
+}
+
 /**
  * Export the Supabase module
  */
