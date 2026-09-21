@@ -1,24 +1,37 @@
 /**
  * CHURCH LIVE — CONFIGURATION MODULE
  * Central configuration and state management for the Church Live application.
- * This module prepares the frontend for future Supabase integration while
- * maintaining full functionality as a static demo.
+ * This module prepares the frontend for Supabase integration.
+ * 
+ * IMPORTANT:
+ * - Supabase Project ID: dwvbjfgviidcdogkdxku
+ * - Use the Supabase Publishable Key for browser-side access (new API key system)
+ * - NEVER use a service-role or secret key in frontend code
+ * - Security comes from Row Level Security (RLS), not from hiding the publishable key
  */
 
 // Application configuration
 const config = {
   // App version and metadata
   version: '1.0.0',
-  phase: 2,
+  phase: 3,
+  // Supabase configuration (new API key system)
+  supabase: {
+    projectId: 'dwvbjfgviidcdogkdxku',
+    url: 'https://dwvbjfgviidcdogkdxku.supabase.co',
+    publishableKey: 'sb_publishable_gnQsG3BTiVJOYbG9hfoW8w_UC8zUYnf', // Set your sb_publishable_... key in a local config file or deployment environment
+    // The publishable key is intentionally not hard-coded in this repository.
+    // It is safe for browser use, but must be supplied at runtime.
+  },
   
   // Feature flags for phased rollout
   features: {
-    supabaseReady: true,   // Indicates Supabase-ready structure (Phase 2)
-    supabaseConnected: false, // Will be true when Supabase is connected (Phase 3+)
-    localHelper: false,    // Will be true when local helper is available (Phase 4+)
-    obsIntegration: false, // Will be true when OBS is integrated (Phase 5+)
-    youtubeIntegration: false, // Will be true when YouTube API is integrated (Phase 6+)
-    hardwareMonitoring: false // Will be true when real hardware monitoring is active (Phase 7+)
+    supabaseReady: true,            // Supabase-ready structure (Phase 2)
+    supabaseConnected: true,        // Connected to Supabase (Phase 3)
+    localHelper: false,             // Will be true when local helper is available (Phase 4+)
+    obsIntegration: false,          // Will be true when OBS is integrated (Phase 5+)
+    youtubeIntegration: false,      // Will be true when YouTube API is integrated (Phase 6+)
+    hardwareMonitoring: false       // Will be true when real hardware monitoring is active (Phase 7+)
   },
   
   // Default values for event workflow

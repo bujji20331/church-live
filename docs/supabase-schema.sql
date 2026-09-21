@@ -191,13 +191,73 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at)
 -- =============================================================================
 -- 4. ROW LEVEL SECURITY (RLS)
 -- =============================================================================
-
+--
+-- Phase 3 RLS Configuration
+-- ----------------------------
+-- IMPORTANT: Anonymous access to `events` table is TEMPORARY for the Phase 3 demo.
+-- In a future phase (when authentication is implemented), these policies MUST be
+-- replaced with authenticated user policies that restrict access to authorized
+-- church volunteers only. The publishable key alone does not provide security;
+-- RLS policies enforce it.
+--
 -- Enable RLS on all tables.
--- In Phase 3, define appropriate policies for authenticated and anonymous access.
--- Example:
--- ALTER TABLE church_settings ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE events ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE church_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
+
+-- -----------------------------------------------------------------------------
+-- church_settings
+-- -----------------------------------------------------------------------------
+-- Minimum anonymous access: read-only (SELECT) for frontend to load defaults.
+-- No INSERT/UPDATE policies created — frontend does not modify settings in Phase 3.
+-- -----------------------------------------------------------------------------
+
+-- Allow anonymous read access to church_settings
+CREATE POLICY "Allow anonymous read access to church_settings"
+ON church_settings
+FOR SELECT
+TO anon
+USING (true);
+
+-- -----------------------------------------------------------------------------
+-- events
+-- -----------------------------------------------------------------------------
+-- Anonymous access allowed for Phase 3 demo: SELECT, INSERT, UPDATE.
+-- DELETE is NOT allowed for anonymous users.
+-- TEMPORARY: These policies use 'anon' role. Replace with authenticated policies
+-- when volunteer authentication is implemented (future phase).
+-- -----------------------------------------------------------------------------
+
+-- Allow anonymous read access to events
+CREATE POLICY "Allow anonymous read access to events"
+ON events
+FOR SELECT
+TO anon
+USING (true);
+
+-- Allow anonymous insert access to events
+CREATE POLICY "Allow anonymous insert access to events"
+ON events
+FOR INSERT
+TO anon
+WITH CHECK (true);
+
+-- Allow anonymous update access to events
+CREATE POLICY "Allow anonymous update access to events"
+ON events
+FOR UPDATE
+TO anon
+USING (true)
+WITH CHECK (true);
+
+-- -----------------------------------------------------------------------------
+-- system_logs
+-- -----------------------------------------------------------------------------
+-- No anonymous access policies created.
+-- Frontend does not read or create logs in Phase 3 (logs are for internal
+-- troubleshooting/auditing). Access will be restricted to authenticated
+-- administrators in future phases.
+-- -----------------------------------------------------------------------------
 
 -- =============================================================================
 -- 5. FUTURE EXTENSIONS (NOT IMPLEMENTED IN PHASE 2.5)

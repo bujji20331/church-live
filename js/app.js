@@ -1,10 +1,11 @@
 /**
  * CHURCH LIVE — FRONTEND APP
- * High-quality, interactive Phase 1 prototype of the church volunteer livestream dashboard.
+ * Phase 3: Connected to Supabase for real event persistence.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  
+  console.log('[Church Live] DOMContentLoaded: starting initialization');
+
   // ==========================================================================
   // 1. STATE VARIABLES
   // ==========================================================================
@@ -71,31 +72,171 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   // 3. INITIALIZATION
   // ==========================================================================
+  /**
+   * Initialize default form values and set up initial state.
+   * Calculates the next Sunday's date and sets the default service time.
+   */
+  function initDefaults() {
+    // Set default service title
+    state.service.title = 'Sunday Worship Service';
+    // Set default service description
+    state.service.description = 'Welcome to our Sunday service livestream! Join us as we sing praises, listen to the Word, and fellowship together.';
+    // Set default service time (next Sunday at 9:30 AM)
+    const now = new Date();
+    const nextSunday = new Date();
+    const daysUntilSunday = (7 - now.getDay()) % 7;
+    nextSunday.setDate(now.getDate() + (daysUntilSunday === 0 ? 7 : daysUntilSunday));
+    nextSunday.setHours(9, 30, 0, 0);
+    const pad = (num) => String(num).padStart(2, '0');
+    const formattedDate = `${nextSunday.getFullYear()}-${pad(nextSunday.getMonth() + 1)}-${pad(nextSunday.getDate())}T${pad(nextSunday.getHours())}:${pad(nextSunday.getMinutes())}`;
+    elements.serviceTime.value = formattedDate;
+  }
   initDefaults();
   updateStatusUI();
+  initSupabaseAndLoadEvents();
 
   // ==========================================================================
   // 4. FUNCTION DEFINITIONS
   // ==========================================================================
 
-  /**
-   * Set smart default values for the scheduling date/time (the upcoming Sunday at 09:30 AM)
-   */
-  function initDefaults() {
-    const now = new Date();
-    const nextSunday = new Date();
+  /** Initialize Supabase client and load events on page load. */
+  function initSupabaseAndLoadEvents() {
+    console.log('[Church Live] Initializing Supabase and loading events');
+    // Initialize Supabase with config from churchLiveConfig
+    const supabase = window.churchLiveSupabase.init(window.churchLiveConfig.config.supabase);
     
-    // Calculate days until next Sunday (0 is Sunday)
-    const daysUntilSunday = (7 - now.getDay()) % 7;
-    nextSunday.setDate(now.getDate() + (daysUntilSunday === 0 ? 7 : daysUntilSunday));
-    nextSunday.setHours(9, 30, 0, 0);
+    if (!supabase) {
+      showSupabaseError('Failed to connect to Supabase. Events will not be saved.');
+      console.error('[Church Live] Supabase initialization failed');
+      return;
+    }
 
-    // Format to datetime-local expected string 'YYYY-MM-DDThh:mm'
-    const pad = (num) => String(num).padStart(2, '0');
-    const formattedDate = `${nextSunday.getFullYear()}-${pad(nextSunday.getMonth() + 1)}-${pad(nextSunday.getDate())}T${pad(nextSunday.getHours())}:${pad(nextSunday.getMinutes())}`;
-    
-    elements.serviceTime.value = formattedDate;
+    console.log('[Church Live] Supabase initialized successfully');
+    // Load existing events
+    loadEventsFromSupabase();
+    console.log('[Church Live] Initial events load completed');
   }
+  
+  /**
+   * Load events from Supabase and display them.
+   */
+  async function loadEventsFromSupabase() {
+    console.log('[Church Live] loadEventsFromSupabase: fetching events');
+    try {
+      const result = await window.churchLiveSupabase.events.get({ limit: 50 });
+      console.log('[Church Live] loadEventsFromSupabase: Supabase get result:', result);
+      if (result.success) {
+        displayEvents(result.data || []);
+      } else {
+        showSupabaseError(`Failed to load events: ${result.error?.message}`);
+      }
+    } catch (error) {
+      showSupabaseError(`Error loading events: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Display events in the recent services table.
+   * @param {Array} events - Array of event objects
+   */
+  function displayEvents(events) {
+    // Clear existing rows
+    elements.recentServicesTable.innerHTML = '';
+    
+    // Add each event
+    events.forEach(event => {
+      const row = createEventRow(event);
+      elements.recentServicesTable.appendChild(row);
+    });
+    
+    // Update history count
+    elements.historyCount.textContent = `${events.length} archived`;
+  }
+  
+  /**
+   * Create a table row for an event.
+   * @param {Object} event - The event object
+   * @returns {HTMLTableRowElement}
+   */
+  function createEventRow(event) {
+    const row = document.createElement('tr');
+    
+    // Format date and time
+    const date = event.scheduledAt ? new Date(event.scheduledAt) : new Date();
+    const dateFormatted = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeFormatted = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    
+    // Format duration if applicable
+    let durationText = '';
+    if (event.startedAt && event.endedAt) {
+      const start = new Date(event.startedAt);
+      const end = new Date(event.endedAt);
+      const durationMs = end - start;
+      const minutes = Math.floor(durationMs / 60000);
+      durationText = ` — ${minutes}m`;
+    }
+    
+    row.innerHTML = `
+      <td class="cell-date">
+        <div class="primary-text">${dateFormatted}</div>
+        <div class="secondary-text">${timeFormatted}</div>
+      </td>
+      <td class="cell-service">
+        <div class="primary-text">${event.title || ''}</div>
+        <div class="secondary-text">${event.description || ''}${durationText}</div>
+      </td>
+      <td>
+        <span class="service-status-pill ${event.status === 'LIVE' ? 'status-live' : 'status-completed'}">
+          ${event.status === 'LIVE' ? 'Live' : event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}
+        </span>
+      </td>
+      <td class="cell-yt">
+        ${event.youtubeUrl ? `
+          <a href="${event.youtubeUrl}" target="_blank" class="yt-link">
+            <span class="yt-icon">▶</span> watch archive
+          </a>
+        ` : `
+          <span class="yt-link disabled">No archive</span>
+        `}
+      </td>
+    `;
+    
+    return row;
+  }
+  
+  /**
+   * Show a Supabase connection error in the UI.
+   * @param {string} message
+   */
+  function showSupabaseError(message) {
+    // Add error banner if it doesn't exist
+    if (!document.getElementById('supabase-error-banner')) {
+      const banner = document.createElement('div');
+      banner.id = 'supabase-error-banner';
+      banner.className = 'alert alert-error';
+      banner.innerHTML = `
+        <div class="alert-content">
+          <span class="alert-icon">⚠️</span>
+          <span class="alert-message">${message}</span>
+        </div>
+      `;
+      document.querySelector('.dashboard-container').prepend(banner);
+    }
+  }
+  
+  /**
+   * Hide the Supabase error banner.
+   */
+  function hideSupabaseError() {
+    const banner = document.getElementById('supabase-error-banner');
+    if (banner) {
+      banner.remove();
+    }
+  }
+  
+  // ==========================================================================
+  // 5. EVENT LISTENERS
+  // ==========================================================================
 
   /**
    * Synchronize the Javascript state variables with the HTML DOM indicator circles and text
@@ -219,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // C. Form Submission / Prepare Workspace
-  elements.serviceForm.addEventListener('submit', (e) => {
+  elements.serviceForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     // Validation
@@ -231,6 +372,29 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('⚠️ Please fill out all service fields before preparing.');
       return;
     }
+
+    // Persist to Supabase
+    console.log('[Church Live] Form submit: creating event with:', {
+      title: titleVal,
+      description: descVal,
+      scheduledAt: timeVal,
+      status: 'DRAFT'
+    });
+    const createResult = await window.churchLiveSupabase.events.create({
+      title: titleVal,
+      description: descVal,
+      scheduledAt: timeVal,
+      status: 'DRAFT'
+    });
+    console.log('[Church Live] createEvent result:', createResult);
+
+    if (!createResult.success) {
+      showSupabaseError(`Failed to save service: ${createResult.error?.message}`);
+      return;
+    }
+
+    // Refresh the events table from Supabase
+    await loadEventsFromSupabase();
 
     // Change Workspace state to Prepared
     state.isPrepared = true;
