@@ -17,6 +17,11 @@ document.addEventListener('DOMContentLoaded', () => {
     youtube: false,
     isPrepared: false,
     isLive: false,
+    service: {
+      id: null,
+      title: '',
+      description: ''
+    },
     timerInterval: null,
     secondsElapsed: 0
   };
