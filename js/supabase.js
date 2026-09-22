@@ -606,6 +606,62 @@ async function logout() {
 }
 
 /**
+ * Send a password reset email.
+ * @param {string} email
+ * @returns {Promise<Object>} { success, error }
+ */
+async function resetPasswordForEmail(email) {
+  if (!isSupabaseReady()) {
+    return { success: false, error: { message: 'Supabase is not connected.' } };
+  }
+
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: 'https://bujji20331.github.io/church-live/'
+    });
+
+    if (error) {
+      console.error('[Church Live] Password reset email failed:', error.message);
+      return { success: false, error };
+    }
+
+    console.log('[Church Live] Password reset email sent to:', email);
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('[Church Live] Password reset email error:', error);
+    return { success: false, error };
+  }
+}
+
+/**
+ * Update the user's password.
+ * @param {string} newPassword
+ * @returns {Promise<Object>} { success, error }
+ */
+async function updatePassword(newPassword) {
+  if (!isSupabaseReady()) {
+    return { success: false, error: { message: 'Supabase is not connected.' } };
+  }
+
+  try {
+    const { error } = await supabaseClient.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      console.error('[Church Live] Password update failed:', error.message);
+      return { success: false, error };
+    }
+
+    console.log('[Church Live] Password updated successfully.');
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('[Church Live] Password update error:', error);
+    return { success: false, error };
+  }
+}
+
+/**
  * Get the user's profile from the profiles table.
  * @param {string} userId - The auth.user id
  * @returns {Promise<Object>} { success, data, error }
@@ -690,7 +746,9 @@ window.churchLiveSupabase = {
     getProfile: getProfile,
     getCurrentProfile: getCurrentProfile,
     isAuthenticated: isAuthenticated,
-    onAuthStateChange: onAuthStateChange
+    onAuthStateChange: onAuthStateChange,
+    resetPasswordForEmail: resetPasswordForEmail,
+    updatePassword: updatePassword
   },
 
   // Data access (Phase 3)

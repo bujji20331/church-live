@@ -865,7 +865,10 @@ body {
 }
 
 #login-email,
-#login-password {
+#login-password,
+#reset-email,
+#new-password,
+#confirm-password {
   width: 100%;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-md);
@@ -879,7 +882,10 @@ body {
 }
 
 #login-email:focus,
-#login-password:focus {
+#login-password:focus,
+#reset-email:focus,
+#new-password:focus,
+#confirm-password:focus {
   outline: none;
   border-color: var(--color-primary);
   background-color: var(--color-surface);
@@ -946,6 +952,45 @@ body {
   color: var(--color-text-main);
   width: 100%;
   margin-top: 1rem;
+}
+
+#forgot-password-button {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-family: var(--font-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  margin-top: 0.5rem;
+  padding: 0.25rem;
+  transition: var(--transition);
+}
+
+#forgot-password-button:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+#login-success {
+  font-size: 0.825rem;
+  color: var(--color-success);
+  background-color: var(--color-success-light);
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-sm);
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+
+.login-form h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--color-text-main);
+  text-align: center;
 }
 
 #logout-button:hover {

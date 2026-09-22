@@ -81,7 +81,24 @@ document.addEventListener('DOMContentLoaded', () => {
     loginButton: document.getElementById('login-button'),
     loginError: document.getElementById('login-error'),
     logoutButton: document.getElementById('logout-button'),
-    mainDashboard: document.getElementById('main-dashboard')
+    mainDashboard: document.getElementById('main-dashboard'),
+
+    // Password Recovery UI
+    forgotPasswordButton: document.getElementById('forgot-password-button'),
+    resetPasswordForm: document.getElementById('reset-password-form'),
+    resetEmail: document.getElementById('reset-email'),
+    resetError: document.getElementById('reset-error'),
+    resetSuccess: document.getElementById('reset-success'),
+    resetPasswordButton: document.getElementById('reset-password-button'),
+    resetCancelButton: document.getElementById('reset-cancel-button'),
+    newPasswordForm: document.getElementById('new-password-form'),
+    newPassword: document.getElementById('new-password'),
+    confirmPassword: document.getElementById('confirm-password'),
+    newPasswordError: document.getElementById('new-password-error'),
+    newPasswordButton: document.getElementById('new-password-button'),
+    passwordUpdatedSection: document.getElementById('password-updated-section'),
+    passwordUpdatedMessage: document.getElementById('password-updated-message'),
+    continueSignInButton: document.getElementById('continue-sign-in-button')
   };
 
   // ==========================================================================
@@ -155,6 +172,20 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('[Church Live] User logged out');
       isAuthenticatedAndActive = false;
       showLoginSection();
+    } else if (event === 'PASSWORD_RECOVERY') {
+      console.log('[Church Live] Password recovery session detected');
+      // Show the "Set New Password" form
+      if (elements.loginSection) elements.loginSection.style.display = '';
+      if (elements.mainDashboard) elements.mainDashboard.style.display = 'none';
+      if (elements.logoutButton) elements.logoutButton.style.display = 'none';
+      if (elements.loginForm) elements.loginForm.style.display = 'none';
+      if (elements.forgotPasswordButton) elements.forgotPasswordButton.style.display = 'none';
+      if (elements.resetPasswordForm) elements.resetPasswordForm.style.display = 'none';
+      if (elements.newPasswordForm) elements.newPasswordForm.style.display = '';
+      if (elements.passwordUpdatedSection) elements.passwordUpdatedSection.style.display = 'none';
+      if (elements.newPasswordError) elements.newPasswordError.textContent = '';
+      if (elements.newPassword) elements.newPassword.value = '';
+      if (elements.confirmPassword) elements.confirmPassword.value = '';
     } else if (session) {
       console.log('[Church Live] Auth state changed - updating UI');
     }
@@ -206,6 +237,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.logoutButton) {
       elements.logoutButton.style.display = 'none';
     }
+    // Reset all password recovery sub-forms to show only the login form
+    if (elements.loginForm) elements.loginForm.style.display = '';
+    if (elements.resetPasswordForm) elements.resetPasswordForm.style.display = 'none';
+    if (elements.newPasswordForm) elements.newPasswordForm.style.display = 'none';
+    if (elements.passwordUpdatedSection) elements.passwordUpdatedSection.style.display = 'none';
+    if (elements.loginError) elements.loginError.textContent = '';
   }
 
   /**
@@ -722,4 +759,111 @@ document.addEventListener('DOMContentLoaded', () => {
     isAuthenticatedAndActive = false;
     showLoginSection();
   });
+
+  // I. FORGOT PASSWORD Button
+  if (elements.forgotPasswordButton) {
+    elements.forgotPasswordButton.addEventListener('click', () => {
+      if (elements.loginForm) elements.loginForm.style.display = 'none';
+      if (elements.forgotPasswordButton) elements.forgotPasswordButton.style.display = 'none';
+      if (elements.resetPasswordForm) elements.resetPasswordForm.style.display = '';
+      if (elements.resetError) elements.resetError.textContent = '';
+      if (elements.resetSuccess) elements.resetSuccess.textContent = '';
+    });
+  }
+
+  // J. RESET PASSWORD Form Submission
+  if (elements.resetPasswordForm) {
+    elements.resetPasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const email = elements.resetEmail.value.trim();
+
+      if (!email) {
+        elements.resetError.textContent = '⚠️ Please enter your email address.';
+        return;
+      }
+
+      elements.resetPasswordButton.disabled = true;
+      elements.resetPasswordButton.textContent = 'Sending...';
+
+      const result = await window.churchLiveSupabase.auth.resetPasswordForEmail(email);
+
+      if (!result.success) {
+        elements.resetError.textContent = `❌ ${result.error?.message || 'Failed to send reset link. Please try again.'}`;
+        elements.resetPasswordButton.disabled = false;
+        elements.resetPasswordButton.textContent = 'Send Reset Link';
+        return;
+      }
+
+      elements.resetSuccess.textContent = '✅ Reset link sent! Check your email to set a new password.';
+      elements.resetError.textContent = '';
+      elements.resetPasswordButton.disabled = false;
+      elements.resetPasswordButton.textContent = 'Send Reset Link';
+    });
+  }
+
+  // K. RESET CANCEL Button (back to login)
+  if (elements.resetCancelButton) {
+    elements.resetCancelButton.addEventListener('click', () => {
+      showLoginSection();
+    });
+  }
+
+  // L. NEW PASSWORD Form Submission
+  if (elements.newPasswordForm) {
+    elements.newPasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const newPassword = elements.newPassword.value;
+      const confirmPassword = elements.confirmPassword.value;
+
+      // Validation
+      if (!newPassword || !confirmPassword) {
+        elements.newPasswordError.textContent = '⚠️ Please enter and confirm your new password.';
+        return;
+      }
+
+      if (newPassword.length < 8) {
+        elements.newPasswordError.textContent = '⚠️ Password must be at least 8 characters long.';
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        elements.newPasswordError.textContent = '❌ Passwords do not match. Please try again.';
+        return;
+      }
+
+      elements.newPasswordButton.disabled = true;
+      elements.newPasswordButton.textContent = 'Updating...';
+
+      const result = await window.churchLiveSupabase.auth.updatePassword(newPassword);
+
+      if (!result.success) {
+        elements.newPasswordError.textContent = `❌ ${result.error?.message || 'Failed to update password. Please try again.'}`;
+        elements.newPasswordButton.disabled = false;
+        elements.newPasswordButton.textContent = 'Update Password';
+        return;
+      }
+
+      // Show success state
+      if (elements.newPasswordForm) elements.newPasswordForm.style.display = 'none';
+      if (elements.passwordUpdatedSection) {
+        elements.passwordUpdatedSection.style.display = '';
+        if (elements.passwordUpdatedMessage) {
+          elements.passwordUpdatedMessage.textContent = 'Password updated successfully. You can now sign in with your new password.';
+        }
+      }
+      if (elements.newPasswordError) elements.newPasswordError.textContent = '';
+
+      elements.newPasswordButton.disabled = false;
+      elements.newPasswordButton.textContent = 'Update Password';
+    });
+  }
+
+  // M. CONTINUE TO SIGN IN Button
+  if (elements.continueSignInButton) {
+    elements.continueSignInButton.addEventListener('click', () => {
+      showLoginSection();
+    });
+  }
 });
