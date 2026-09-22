@@ -134,12 +134,13 @@ document.addEventListener('DOMContentLoaded', () => {
      console.log('[Church Live] Authenticated user with valid role - loading private data');
      isAuthenticatedAndActive = true;
      showDashboardSection();
-     initSupabaseAndLoadEvents();
+     loadEventsFromSupabase();
    }
 
    updateStatusUI();
 
    // Only load private data after successful authentication and profile validation
+   initSupabaseAndLoadEvents();
    checkAuthenticationAndLoad();
 
   // ==========================================================================
@@ -181,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       isAuthenticatedAndActive = true;
       showDashboardSection();
-      initSupabaseAndLoadEvents();
+      loadEventsFromSupabase();
       return true;
     })();
 
