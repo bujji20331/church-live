@@ -6,6 +6,10 @@
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[Church Live] DOMContentLoaded: starting initialization');
 
+  // Hide dashboard immediately; login screen is the default view until auth is validated
+  showLoginSection();
+
+
   // ==========================================================================
   // 1. STATE VARIABLES
   // ==========================================================================
@@ -151,7 +155,6 @@ document.addEventListener('DOMContentLoaded', () => {
      console.log('[Church Live] Authenticated user with valid role - loading private data');
      isAuthenticatedAndActive = true;
      showDashboardSection();
-     loadEventsFromSupabase();
    }
 
    updateStatusUI();
@@ -277,11 +280,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     console.log('[Church Live] Supabase initialized successfully');
-    // Load existing events
-    loadEventsFromSupabase();
-    console.log('[Church Live] Initial events load completed');
+    // Events loaded only after successful auth validation (validateSessionAndShowDashboard)
   }
-  
+
   /**
    * Load events from Supabase and display them.
    */
