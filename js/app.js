@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
    let isAuthenticatedAndActive = false;
 
    async function checkAuthenticationAndLoad() {
-     const session = getSession();
+     const session = await getSession();
      if (!session) {
        // No authenticated session - skip private data loading
        console.log('[Church Live] No authenticated session - showing login');

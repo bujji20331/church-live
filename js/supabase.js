@@ -544,7 +544,7 @@ async function getCurrentUser() {
  * @returns {Promise<boolean>}
  */
 async function isAuthenticated() {
-  const session = getSession();
+  const session = await getSession();
   if (!session) {
     return false;
   }
@@ -697,7 +697,7 @@ async function getCurrentProfile() {
     return { success: false, data: null, error: { message: 'Supabase is not connected.' } };
   }
 
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   if (!user) {
     return { success: false, data: null, error: { message: 'No authenticated user.' } };
   }
