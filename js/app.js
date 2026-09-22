@@ -6,10 +6,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[Church Live] DOMContentLoaded: starting initialization');
 
-  // Hide dashboard immediately; login screen is the default view until auth is validated
-  showLoginSection();
-
-
   // ==========================================================================
   // 1. STATE VARIABLES
   // ==========================================================================
@@ -104,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     passwordUpdatedMessage: document.getElementById('password-updated-message'),
     continueSignInButton: document.getElementById('continue-sign-in-button')
   };
+initDefaults();
 
   // ==========================================================================
   // 3. INITIALIZATION
@@ -127,7 +124,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const formattedDate = `${nextSunday.getFullYear()}-${pad(nextSunday.getMonth() + 1)}-${pad(nextSunday.getDate())}T${pad(nextSunday.getHours())}:${pad(nextSunday.getMinutes())}`;
     elements.serviceTime.value = formattedDate;
   }
-     initDefaults();
 
    // ==========================================================================
    // 4. AUTHENTICATION GATING
@@ -228,9 +224,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Show the login section and hide the dashboard.
-   */
-  function showLoginSection() {
+    * Show the login section and hide the dashboard.
+    */
+    function showLoginSection() {
     if (elements.loginSection) {
       elements.loginSection.style.display = '';
     }
