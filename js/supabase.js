@@ -517,24 +517,26 @@ if (typeof window !== 'undefined' && typeof supabase !== 'undefined' && typeof w
 
 /**
  * Get the current Supabase session.
- * @returns {Object|null} The session object or null
+ * @returns {Promise<Object|null>} The session object or null
  */
-function getSession() {
+async function getSession() {
   if (!isSupabaseReady()) {
     return null;
   }
-  return supabaseClient.auth.getSession()?.data?.session || null;
+  const { data } = await supabaseClient.auth.getSession();
+  return data?.session || null;
 }
 
 /**
  * Get the current authenticated user.
- * @returns {Object|null} The user object or null
+ * @returns {Promise<Object|null>} The user object or null
  */
-function getCurrentUser() {
+async function getCurrentUser() {
   if (!isSupabaseReady()) {
     return null;
   }
-  return supabaseClient.auth.getUser()?.data?.user || null;
+  const { data } = await supabaseClient.auth.getUser();
+  return data?.user || null;
 }
 
 /**
