@@ -130,27 +130,14 @@ initDefaults();
    // ==========================================================================
    let isAuthenticatedAndActive = false;
 
-   async function checkAuthenticationAndLoad() {
-     const session = await getSession();
-     if (!session) {
-       // No authenticated session - skip private data loading
-       console.log('[Church Live] No authenticated session - showing login');
-       showLoginSection();
-       return;
-     }
-
-     // Authenticated session - verify profile
+      async function checkAuthenticationAndLoad() {
      const profile = await getCurrentProfile();
-     if (!profile || !profile.success || profile.data?.is_active !== true ||
-         (profile.data?.role !== 'SUPER_ADMIN' && profile.data?.role !== 'ADMIN')) {
-       console.log('[Church Live] Insufficient permissions - showing login');
-       showLoginSection();
-       return;
-     }
 
-     console.log('[Church Live] Authenticated user with valid role - loading private data');
-     isAuthenticatedAndActive = true;
-     showDashboardSection();
+     if (profile.success && profile.data) {
+       showDashboardSection();
+     } else {
+       showLoginSection();
+     }
    }
 
    updateStatusUI();
