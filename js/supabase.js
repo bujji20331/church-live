@@ -198,9 +198,85 @@ function normalizeSettings(settings) {
   };
 }
 
+/**
+ * Get the current user's church_id from their profile.
+ * Validates user is authenticated and active.
+ * @returns {Promise<string|null>} The church_id or null if not found
+ */
+async function getCurrentChurchId() {
+  if (!isSupabaseReady()) {
+    return null;
+  }
+  try {
+    const { data: { user }, error } = await supabaseClient.auth.getUser();
+    if (!user || error) {
+      return null;
+    }
+    
+    const { data, error: profileError } = await supabaseClient
+      .from('profiles')
+      .select('church_id')
+      .eq('id', user.id)
+      .eq('is_active', true)  // Verify user is active
+      .single();
+    
+    if (profileError) return null;
+    return data?.church_id || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // =============================================================================
 // Church Settings
 // =============================================================================
+
+/**
+ * Get the current church name from church_settings.
+ * Reads the church_settings row for the authenticated user's church.
+ * The church name is displayed read-only in the header.
+ * @returns {Promise<Object>} { success, data: { churchName, church_name }, error }
+ */
+async function getChurchName() {
+  if (!isSupabaseReady()) {
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Supabase is not connected.' }
+    };
+  }
+
+  try {
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (!user || authError) {
+      return { success: false, data: null, error: { message: 'Not authenticated' } };
+    }
+
+    const currentChurchId = await getCurrentChurchId();
+    if (!currentChurchId) {
+      return { success: false, data: null, error: { message: 'Church not found for current user' } };
+    }
+
+    const { data: settingsData, error: settingsError } = await supabaseClient
+      .from('church_settings')
+      .select('church_name')
+      .eq('church_id', currentChurchId)
+      .single();
+
+    if (settingsError) throw settingsError;
+    return {
+      success: true,
+      data: {
+        churchName: settingsData.church_name,
+        church_name: settingsData.church_name
+      },
+      error: null
+    };
+  } catch (error) {
+    console.error('[Church Live] Failed to load church name:', error);
+    return { success: false, data: null, error };
+  }
+}
 
 /**
  * Get church settings from Supabase.
@@ -216,9 +292,20 @@ async function getChurchSettings() {
   }
 
   try {
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (!user || authError) {
+      return { success: false, data: null, error: { message: 'Not authenticated' } };
+    }
+
+    const currentChurchId = await getCurrentChurchId();
+    if (!currentChurchId) {
+      return { success: false, data: null, error: { message: 'Church not found for current user' } };
+    }
+
     const { data, error } = await supabaseClient
       .from('church_settings')
       .select('*')
+      .eq('church_id', currentChurchId)
       .single();
 
     if (error) throw error;
@@ -252,6 +339,13 @@ async function updateChurchSettings(settings) {
       ? settings.youtubeConnected
       : settings.youtube_connected || false
   };
+
+  const currentChurchId = await getCurrentChurchId();
+  if (!currentChurchId) {
+    return { success: false, data: null, error: { message: 'Church not found for current user' } };
+  }
+  
+  updateData.church_id = currentChurchId;
 
   try {
     const { data, error } = await supabaseClient
@@ -359,6 +453,11 @@ async function createEvent(eventData) {
 
   try {
     const eventColumns = toEventColumns(eventData);
+    const currentChurchId = await getCurrentChurchId();
+    if (!currentChurchId) {
+      return { success: false, data: null, error: { message: 'Church not found for current user' } };
+    }
+    eventColumns.church_id = currentChurchId;
     console.log('[Church Live] createEvent: mapping to database columns:', eventColumns);
 
     const { data, error } = await supabaseClient
@@ -486,13 +585,21 @@ async function addSystemLog(logData) {
   }
 
   try {
+    const currentChurchId = await getCurrentChurchId();
+    if (!currentChurchId) {
+      return { success: false, data: null, error: { message: 'Church not found for current user' } };
+    }
+
+    const insertData = {
+      event_id: logData.eventId || logData.event_id || null,
+      event_type: logData.eventType || logData.event_type || 'error',
+      message: logData.message || '',
+      church_id: currentChurchId
+    };
+
     const { data, error } = await supabaseClient
       .from('system_logs')
-      .insert({
-        event_id: logData.eventId || logData.event_id || null,
-        event_type: logData.eventType || logData.event_type || 'error',
-        message: logData.message || ''
-      })
+      .insert(insertData)
       .select('*')
       .single();
 
@@ -757,6 +864,9 @@ window.churchLiveSupabase = {
   churchSettings: {
     get: getChurchSettings,
     update: updateChurchSettings
+  },
+  church: {
+    getName: getChurchName
   },
   events: {
     get: getEvents,

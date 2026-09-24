@@ -83,6 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
     logoutButton: document.getElementById('logout-button'),
     mainDashboard: document.getElementById('main-dashboard'),
 
+    // Church name display element
+    churchNameDisplay: document.getElementById('church-name-display'),
+    churchNameText: document.querySelector('.church-name-text'),
+
     // Password Recovery UI
     forgotPasswordButton: document.getElementById('forgot-password-button'),
     resetPasswordForm: document.getElementById('reset-password-form'),
@@ -123,6 +127,31 @@ initDefaults();
     const pad = (num) => String(num).padStart(2, '0');
     const formattedDate = `${nextSunday.getFullYear()}-${pad(nextSunday.getMonth() + 1)}-${pad(nextSunday.getDate())}T${pad(nextSunday.getHours())}:${pad(nextSunday.getMinutes())}`;
     elements.serviceTime.value = formattedDate;
+  }
+
+  /**
+   * Load and display the current church name in the header (read-only).
+   * Uses the church_settings table, which is tenant-isolated via RLS.
+   */
+  async function loadChurchName() {
+    if (!elements.churchNameText) {
+      return;
+    }
+
+    try {
+      const result = await window.churchLiveSupabase.church.getName();
+      if (result.success && result.data?.churchName) {
+        elements.churchNameText.textContent = result.data.churchName;
+        if (elements.churchNameDisplay) {
+          elements.churchNameDisplay.style.opacity = '1';
+        }
+      } else {
+        elements.churchNameText.textContent = 'Church not available';
+      }
+    } catch (error) {
+      console.error('[Church Live] Failed to load church name:', error);
+      elements.churchNameText.textContent = 'Church not available';
+    }
   }
 
    // ==========================================================================
@@ -244,6 +273,7 @@ initDefaults();
     if (elements.logoutButton) {
       elements.logoutButton.style.display = 'inline-block';
     }
+    loadChurchName();
   }
 
   // ==========================================================================
