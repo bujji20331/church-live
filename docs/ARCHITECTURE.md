@@ -163,5 +163,88 @@ Remote Bible-study streaming is a **future capability** and is not implemented i
 
 ---
 
+## 6. Universal Hardware Support
+
+Church Live is designed to be **hardware-agnostic** (universal). The application
+does NOT depend on any specific manufacturer, brand, model number, or connection
+type (USB-A, USB-C, Thunderbolt, HDMI, 3.5mm, etc.).
+
+### 6.1 Device Abstraction Chain
+
+```
+Physical equipment (camera, mixer, microphone, etc.)
+            ↓
+Connection / adapter / capture device / audio interface
+            ↓
+Mac or Windows (operating system)
+            ↓
+Operating system device
+            ↓
+Browser MediaDevices API (navigator.mediaDevices)
+            ↓
+Church Live (js/media-devices.js)
+```
+
+### 6.2 Core Principle
+
+Church Live cares only about the **video/audio device presented by the
+operating system and browser**, not the manufacturer of the physical equipment.
+
+Supported video sources (any browser-compatible device):
+- USB webcam / USB camera
+- HDMI camera through an HDMI-to-USB capture device
+- DSLR/mirrorless camera through a compatible capture device
+- OBS virtual camera
+- Any other `videoinput` device
+
+Supported audio sources (any browser-compatible device):
+- USB microphone
+- 3.5mm computer audio input
+- USB audio interface
+- Mixer connected through USB
+- Mixer connected through an audio adapter
+- Computer microphone
+- Any other `audioinput` device
+
+### 6.3 Implementation
+
+The `js/media-devices.js` module provides a reusable abstraction over the
+browser's standard MediaDevices API:
+
+- `navigator.mediaDevices.enumerateDevices()` — list all video/audio inputs
+- `navigator.mediaDevices.getUserMedia()` — request permission and test a device
+- `deviceId` — identify a specific video/audio input
+- `kind: 'videoinput` — identify a specific video/audio input
+
+The UI never hard-codes any manufacturer-specific device names or connection types.
+
+### 6.4 Backward Compatibility
+
+Existing database fields and source-type values are preserved for now:
+- `events.video_source` — may still contain legacy values such as `CHURCH_CAMERA`
+- `events.audio_source` — may still contain legacy values such as `YAMAHA_MIXER`
+
+No destructive database migration is performed. These values are treated as
+legacy metadata and do not affect device selection logic. Future migrations may
+map them to generic values.
+
+### 6.5 Browser Permissions
+
+Device labels may be blank before permission is granted. The media-devices module
+requestMediaPermissions() first, then re-enumerate() after permission.
+- Handle permission denial gracefully (show "no permission" state).
+- Handle no camera/microphone gracefully (show "no device" state).
+- Listen for `devicechange` events to handle unplug/replug where practical.
+- Never continuously request permission.
+
+### 6.6 Current Church Equipment
+
+The current church setup (Panasonic HC-MD12M camera, Yamaha MG16XU mixer,
+HDMI-to-USB capture device, AUX connection to the laptop) continues to work
+because the browser exposes the resulting video and audio input devices. The
+application does not need to know these specific models.
+
+---
+
 *Architecture Version 2.5 (Phase 2.5)*
 *General purpose event/livestream management system supporting multiple church event types.*

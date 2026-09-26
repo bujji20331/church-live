@@ -410,6 +410,31 @@ body {
   width: 100%;
 }
 
+.btn-block {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.btn-icon {
+  font-size: 1.1rem;
+}
+
+.permission-buttons {
+  margin-top: 1rem;
+}
+
+.permission-buttons .btn {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+  color: var(--color-surface);
+  border: none;
+  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
+}
+
+.permission-buttons .btn:hover {
+  background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary));
+  transform: translateY(-1px);
+}
+
 .btn-text {
   background: none;
   border: none;

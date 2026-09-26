@@ -55,8 +55,8 @@ const config = {
 const state = {
   // System status (will eventually come from local helper/Supabase)
   system: {
-    camera: false,    // Panasonic HC-MD12M via USB capture
-    audio: false,     // Yamaha MG16XU USB audio
+    camera: false,    // Generic camera input device
+    audio: false,     // Generic audio input device
     internet: false,  // Church internet connection
     encoder: false,   // OBS/Encoder status
     youtube: false    // YouTube Live connection

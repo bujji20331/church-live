@@ -93,6 +93,33 @@ This roadmap outlines the systematic development of Church Live. It is structure
   - Bridge Web Dashboard actions to Local Helper commands.
 
 
+### Phase 6.5: Universal Hardware Support (Universal Hardware Foundation)
+* **Goal**: Make Church Live work with any standard video/audio device the user's
+  Mac or Windows computer and browser can expose. No manufacturer-specific
+  assumptions in the core architecture.
+* **Deliverables**:
+  - `js/media-devices.js`: Reusable browser device-detection module with
+    `enumerateVideoDevices()`, `enumerateAudioDevices()`,
+    `enumerateMediaDevices()`, `requestMediaPermissions()`,
+    `getDeviceLabel()`, `getDefaultVideoDevice()`,
+    `getDefaultAudioDevice()`.
+  - Generic device abstraction in the UI: video/audio device selection
+    dropdowns populated from the browser, not from a hard-coded manufacturer list.
+  - Correct permission handling: request permission when necessary, re-enumerate
+    after permission, handle denial gracefully, handle no devices gracefully,
+    listen for `devicechange` events.
+  - Update `docs/ARCHITECTURE.md` with the "Universal Hardware Support" section
+    explaining the abstraction chain from physical equipment to Church Live.
+  - Update `docs/IMPLEMENTATION_PLAN.md` with this phase.
+  - Preserve backward compatibility: existing `video_source` and `audio_source`
+    values (e.g., `CHURCH_CAMERA`, `YAMAHA_MIXER`) remain valid in the database.
+    No destructive migration.
+* **NOT implemented in this phase**:
+  - No actual YouTube streaming.
+  - No OBS integration.
+  - No full dashboard redesign.
+  - No paid services, cloud video storage, or proprietary hardware SDKs.
+
 ### Phase 7: Remote Phone / Computer Livestream Capability
 * **Goal**: Support remote Bible studies and guest livestreams where a pastor/leader participates via phone or computer camera and microphone.
 * **Deliverables**:
@@ -103,8 +130,7 @@ This roadmap outlines the systematic development of Church Live. It is structure
 ### Phase 8: Monitoring, Reliability and Recovery
 * **Goal**: Detect and report actual hardware connection states (camera, audio, internet, encoder, YouTube).
 * **Deliverables**:
-  - Panasonic HC-MD12M camera connection detection (via HDMI-to-USB capture).
-  - Yamaha MG16XU USB audio connection detection.
+  - **Hardware-agnostic connection detection**: Use `js/media-devices.js` to detect that the **browser's video/audio device is connected and functioning** (no specific manufacturer/model knowledge needed).
   - Church internet connection monitoring.
   - OBS status monitoring.
   - Church laptop health monitoring.
