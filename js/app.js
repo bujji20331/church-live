@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const state = {
     camera: false,        // True only after camera permissions are granted
     audio: false,         // True only after microphone permissions are granted
+    currentCameraDeviceId: null,
     internet: true,
     encoder: false,
     youtube: false,
@@ -51,6 +52,10 @@ document.addEventListener('DOMContentLoaded', () => {
     cameraDetail: document.getElementById('camera-detail'),
     audioDetail: document.getElementById('audio-detail'),
     btnRequestPermissions: document.getElementById('btn-request-permissions'),
+    cameraPreview: document.getElementById('camera-preview'),
+    cameraPreviewContainer: document.getElementById('camera-preview-container'),
+    cameraSourceSelect: document.getElementById('camera-source-select'),
+    cameraSourceContainer: document.getElementById('camera-source-container'),
 
     // Service Setup Form
     serviceForm: document.getElementById('service-form'),
@@ -909,6 +914,23 @@ initDefaults();
         state.hasCameraPermission = true;
         state.hasAudioPermission = true;
 
+        // Display camera preview using the existing MediaStream
+        if (result.stream && elements.cameraPreview) {
+          elements.cameraPreview.srcObject = result.stream;
+          // Track the current camera device (use default if available)
+          if (deviceResult.videoDevices.length > 0) {
+            state.currentCameraDeviceId = deviceResult.videoDevices[0].id;
+          }
+        }
+        if (elements.cameraPreviewContainer) {
+          elements.cameraPreviewContainer.style.display = '';
+        }
+
+        // Populate camera source dropdown for HDMI/USB capture device support
+        if (elements.cameraSourceSelect) {
+          populateCameraSources();
+        }
+
         // Update status details with device information
         if (deviceResult.videoDevices.length > 0) {
           showStatusDetail(elements.cameraDetail, `Camera permission granted - ${deviceResult.videoDevices.length} video device(s) detected`);
@@ -924,11 +946,15 @@ initDefaults();
 
         // Set up device change listeners for hot-plug/unplug
         if (window.churchLiveMediaDevices?.onDeviceChange) {
-          window.churchLiveMediaDevices.onDeviceChange((devices) => {
+          window.churchLiveMediaDevices.onDeviceChange(async (devices) => {
             const videoDevices = devices.filter(d => d.isVideo);
             const audioDevices = devices.filter(d => d.isAudio);
             state.camera = videoDevices.length > 0;
             state.audio = audioDevices.length > 0;
+            // Refresh camera source dropdown if devices changed
+            if (elements.cameraSourceSelect) {
+              await populateCameraSources();
+            }
             updateStatusUI();
           });
         }
@@ -937,16 +963,81 @@ initDefaults();
         const errorMsg = result.error ? result.error.message : 'Permission request cancelled';
         showStatusDetail(elements.cameraDetail, `Camera permission denied: ${errorMsg}`);
         showStatusDetail(elements.audioDetail, `Microphone permission denied: ${errorMsg}`);
+        if (elements.cameraPreviewContainer) {
+          elements.cameraPreviewContainer.style.display = 'none';
+        }
       }
     } catch (error) {
       console.error('[Church Live] Error checking media permissions:', error);
       showStatusDetail(elements.cameraDetail, 'Error checking camera permissions');
       showStatusDetail(elements.audioDetail, 'Error checking microphone permissions');
+      if (elements.cameraPreviewContainer) {
+        elements.cameraPreviewContainer.style.display = 'none';
+      }
     }
 
     updateStatusUI();
   }
 
+  // --- Camera Source Management ---
+  async function populateCameraSources() {
+    // Enumerate video devices
+    const devices = await window.churchLiveMediaDevices.enumerateVideoDevices();
+    
+    // Clear dropdown and reset
+    elements.cameraSourceSelect.innerHTML = '';
+    
+    if (devices.length === 0) {
+      elements.cameraSourceSelect.innerHTML = '<option value="">No cameras found</option>';
+      elements.cameraSourceContainer.style.display = 'none';
+      return;
+    }
+    
+    // Populate dropdown with each camera device
+    devices.forEach(device => {
+      const option = document.createElement('option');
+      option.value = device.id;
+      option.textContent = device.label || 'Unnamed Camera';
+      elements.cameraSourceSelect.appendChild(option);
+    });
+    
+    // Select the currently active camera (or default to first)
+    if (state.currentCameraDeviceId && devices.some(d => d.id === state.currentCameraDeviceId)) {
+      elements.cameraSourceSelect.value = state.currentCameraDeviceId;
+    } else {
+      elements.cameraSourceSelect.selectedIndex = 0;
+      state.currentCameraDeviceId = devices[0].id;
+    }
+    
+    elements.cameraSourceContainer.style.display = 'block';
+  }
+
+  async function switchCamera(deviceId) {
+    if (!deviceId) return;
+
+    // Stop the current stream tracks
+    if (elements.cameraPreview && elements.cameraPreview.srcObject) {
+      const tracks = elements.cameraPreview.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      elements.cameraPreview.srcObject = null;
+    }
+
+    // Create a new stream for the selected camera
+    const result = await window.churchLiveMediaDevices.createMediaStream({
+      videoDeviceId: deviceId
+    });
+
+    if (result.success && result.stream) {
+      elements.cameraPreview.srcObject = result.stream;
+      elements.cameraPreviewContainer.style.display = '';
+      state.currentCameraDeviceId = deviceId;
+      updateStatusUI();
+    } else {
+      console.warn(`Failed to create stream for camera ${deviceId}`, result.error);
+    }
+  }
+
+  // --- Event Listeners ---
   elements.btnRequestPermissions.addEventListener('click', () => {
     // Show loading state
     elements.btnRequestPermissions.disabled = true;
@@ -955,6 +1046,13 @@ initDefaults();
       elements.btnRequestPermissions.disabled = false;
       elements.btnRequestPermissions.textContent = 'Grant Camera & Microphone Access';
     });
+  });
+
+  // Add event listener for camera source selection
+  elements.cameraSourceSelect?.addEventListener('change', () => {
+    if (elements.cameraSourceSelect.value) {
+      switchCamera(elements.cameraSourceSelect.value);
+    }
   });
 
   elements.statusInternet.addEventListener('click', () => {
@@ -1346,6 +1444,19 @@ initDefaults();
 
     // Clear prepared event ID from sessionStorage on logout
     sessionStorage.removeItem('preparedEventId');
+
+    // Clear camera preview stream on logout
+    if (elements.cameraPreview && elements.cameraPreview.srcObject) {
+      const tracks = elements.cameraPreview.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      elements.cameraPreview.srcObject = null;
+    }
+    if (elements.cameraPreviewContainer) {
+      elements.cameraPreviewContainer.style.display = 'none';
+    }
+    if (elements.cameraSourceContainer) {
+      elements.cameraSourceContainer.style.display = 'none';
+    }
 
     isAuthenticatedAndActive = false;
     showLoginSection();

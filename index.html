@@ -130,6 +130,29 @@
             </div>
           </li>
           
+          <!-- Camera Preview Panel -->
+          <li class="status-item camera-preview-panel" id="camera-preview-container" style="display: none; padding: 0; background: transparent; border: none;">
+            <div class="camera-preview-wrapper">
+              <span class="camera-preview-label">Camera</span>
+              <video autoplay playsinline muted id="camera-preview" class="camera-preview"></video>
+            </div>
+          </li>
+          
+          <!-- Camera Source Selection -->
+          <li class="status-item" id="camera-source-container" style="display: none;">
+            <div class="status-item-left">
+              <span class="item-icon">🎥</span>
+              <div class="item-info">
+                <span class="item-name">Camera Source</span>
+              </div>
+            </div>
+            <div class="status-indicator">
+              <select id="camera-source-select" class="camera-source-select">
+                <option value="">Loading cameras...</option>
+              </select>
+            </div>
+          </li>
+          
           <li class="status-item" id="status-internet" data-checked="true">
             <div class="status-item-left">
               <span class="item-icon">🌐</span>
