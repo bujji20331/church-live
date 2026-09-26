@@ -125,6 +125,34 @@ Phase 5B changes are currently being reviewed locally and must NOT be assumed to
 
 ---
 
+## Phase 6B — DATABASE FOUNDATION: COMPLETE
+
+Phase 6B database foundation has been completed and independently verified in the live Supabase database.
+
+Verified in the live Supabase database:
+
+1. `profiles.role` CHECK constraint includes: SUPER_ADMIN, ADMIN, LOCAL_HELPER
+2. `local_helper_commands` table exists with all expected columns (id, church_id, command_type, event_id, requested_by, helper_id, status, idempotency_key, created_at, claimed_at, started_at, completed_at, expires_at, obs_result, error_message, updated_at)
+3. RLS enabled on `local_helper_commands`
+4. RLS policies verified:
+   * `local_helper_commands_select_active`
+   * `local_helper_commands_insert_admin`
+   * NO UPDATE policy
+   * NO DELETE policy
+5. INSERT policy enforces: authenticated user, active profile, SUPER_ADMIN or ADMIN role, user's own church, requested_by = auth.uid(), helper_id IS NULL, status = PENDING, event belongs to same church
+6. SECURITY DEFINER functions verified:
+   * `create_local_helper_command(UUID, TEXT, UUID, UUID)`
+   * `claim_local_helper_command(UUID)`
+   * `transition_local_helper_command_status(UUID, TEXT, JSONB, TEXT)`
+7. All three functions are SECURITY DEFINER with `search_path=public, pg_catalog`
+8. Function EXECUTE privileges: authenticated = YES, anon = NO, postgres/service_role remain as database/system roles
+9. Authentication/role checks independently reviewed and corrected so unauthenticated or inactive profiles cannot use the helper functions
+10. Phase 6B does NOT provision a LOCAL_HELPER Auth user yet. Auth provisioning remains outside Phase 6B.
+
+---
+
+---
+
 ## Media Device Integration
 
 `js/media-devices.js` provides a browser-standard media device abstraction.
@@ -343,9 +371,11 @@ Do not hardcode the current church as the permanent architecture.
 
 ## Current Development Status
 
-The current implementation has reached Phase 5B.
+The current implementation has reached Phase 6B.
 
-Media-device integration has been implemented locally.
+Phase 6B (database foundation) has been completed and independently verified in the live Supabase database.
+
+Phase 5B (media-device integration) is implemented locally but not yet committed.
 
 Current priority:
 
@@ -404,15 +434,18 @@ When a task is blocked by a tool error:
 
 ## Current Safe Continuation Point
 
-The next immediate task is to review the completed Phase 5B media-device integration.
+Phase 6B database foundation is completed and independently verified in the live Supabase database.
+
+Phase 5B (media-device integration) has been implemented locally and needs to be reviewed.
 
 Do not:
 
-* redo Phase 5B
-* rewrite `js/media-devices.js`
+* redo Phase 6B
 * modify `docs/supabase-schema.sql`
 * commit automatically
 * push automatically
-* begin Phase 6
+* begin Phase 6C
+* modify migration files
+* access Supabase
 
-The next action should be a read-only Git/diff/validation review followed by local browser testing.
+The next action should be a read-only Git/diff/validation review followed by local browser testing of Phase 5B functionality.
