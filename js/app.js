@@ -851,7 +851,7 @@ initDefaults();
     }
 
     // Determine if we can reveal the final "START LIVESTREAM NOW" button
-    if (isObsReady && isYtReady) {
+    if (state.isPrepared && !state.isLive) {
       elements.btnSimulateConnect.classList.add('hidden');
       if (!state.isLive) {
         elements.btnStartStream.classList.remove('hidden');
@@ -1119,14 +1119,44 @@ initDefaults();
   });
 
   // E. GO LIVE Sequence
-  elements.btnStartStream.addEventListener('click', () => {
+  elements.btnStartStream.addEventListener('click', async () => {
     if (!state.camera || !state.audio || !state.internet || !state.encoder || !state.youtube) {
       alert('⚠️ Cannot start livestream. All system statuses must be green and fully online first!');
       return;
     }
 
+    // Get current church ID
+    const churchId = await getCurrentChurchId();
+    if (!churchId) {
+      alert('Could not retrieve church ID. Cannot start stream.');
+      return;
+    }
+
+    // Get the prepared event ID (the event being started)
+    const preparedEventId = sessionStorage.getItem('preparedEventId');
+    if (!preparedEventId) {
+      alert('No prepared event found. Please prepare an event first.');
+      return;
+    }
+
+    // Generate a new idempotency key for this command
+    const idempotencyKey = crypto.randomUUID();
+
+    // Create the START_STREAM local helper command in Supabase
+    const createResult = await window.churchLiveSupabase.localHelperCommands.create(
+      churchId,
+      'START_STREAM',
+      preparedEventId,
+      idempotencyKey
+    );
+
+    if (!createResult.success) {
+      showSupabaseError(`Failed to create START_STREAM command: ${createResult.error?.message}`);
+      return;
+    }
+
     state.isLive = true;
-    
+
     // Change layout styling to Live Red State
     elements.prepConsole.classList.remove('active-preview');
     elements.prepConsole.classList.add('live-mode');

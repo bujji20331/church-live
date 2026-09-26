@@ -923,6 +923,98 @@ function onAuthStateChange(callback) {
   };
 }
 
+/**
+ * Create a local helper command in Supabase.
+ * @param {string} churchId - The church ID
+ * @param {string} commandType - Type of the local helper command
+ * @param {string} eventId - The event ID associated with the command
+ * @param {string} idempotencyKey - Unique key to prevent duplicate execution
+ * @returns {Object} Result with success, data, and error
+ */
+async function createLocalHelperCommand(churchId, commandType, eventId, idempotencyKey) {
+  if (!isSupabaseReady()) {
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Supabase is not connected.' }
+    };
+  }
+
+  try {
+    const result = await supabaseClient.rpc('create_local_helper_command', {
+      p_church_id: churchId,
+      p_command_type: commandType,
+      p_event_id: eventId,
+      p_idempotency_key: idempotencyKey
+    });
+    return normalizeResult(result, null);
+  } catch (error) {
+    console.error('[Church Live] Failed to create local helper command:', error);
+    return normalizeResult(null, error);
+  }
+}
+
+/**
+ * Claim a local helper command as claimed.
+ * @param {string} commandId - The ID of the local helper command to claim
+ * @returns {Object} Result with success, data, and error
+ */
+async function claimLocalHelperCommand(commandId) {
+  if (!isSupabaseReady()) {
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Supabase is not connected.' }
+    };
+  }
+
+  try {
+    const result = await supabaseClient.rpc('claim_local_helper_command', {
+      p_command_id: commandId
+    });
+    return normalizeResult(result, null);
+  } catch (error) {
+    console.error('[Church Live] Failed to claim local helper command:', error);
+    return normalizeResult(null, error);
+  }
+}
+
+/**
+ * Transition the status of a local helper command.
+ * @param {string} commandId - The ID of the local helper command
+ * @param {string} newStatus - The new status to set
+ * @param {Object|null} obsResult - Optional observation result
+ * @param {string|null} errorMessage - Optional error message
+ * @returns {Object} Result with success, data, and error
+ */
+async function transitionLocalHelperCommandStatus(
+  commandId,
+  newStatus,
+  obsResult,
+  errorMessage
+) {
+  if (!isSupabaseReady()) {
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Supabase is not connected.' }
+    };
+  }
+
+  try {
+    const result = await supabaseClient.rpc('transition_local_helper_command_status', {
+      p_command_id: commandId,
+      p_new_status: newStatus,
+      p_obs_result: obsResult,
+      p_error_message: errorMessage
+    });
+    return normalizeResult(result, null);
+  } catch (error) {
+    console.error('[Church Live] Failed to transition local helper command status:', error);
+    return normalizeResult(null, error);
+  }
+}
+
 // =============================================================================
 // Export
 // =============================================================================
@@ -976,5 +1068,12 @@ window.churchLiveSupabase = {
   logs: {
     get: getSystemLogs,
     add: addSystemLog
+  },
+
+  // Local Helper Commands (Phase 6C-1)
+  localHelperCommands: {
+    create: createLocalHelperCommand,
+    claim: claimLocalHelperCommand,
+    transitionStatus: transitionLocalHelperCommandStatus
   }
 };

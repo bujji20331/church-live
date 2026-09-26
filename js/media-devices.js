@@ -212,6 +212,7 @@ async function getDefaultAudioDevice() {
   // Prefer a device with a meaningful label
   const labeled = devices.find(d => d.label && d.label.trim().length > 0);
   return labeled || devices[0];
+}
 
 /**
  * Check if the browser supports media devices.
@@ -340,4 +341,3 @@ window.churchLiveMediaDevices = {
 };
 
 console.log('[Church Live] Media Devices module loaded');
-}
