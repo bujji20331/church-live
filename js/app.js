@@ -10,11 +10,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1. STATE VARIABLES
   // ==========================================================================
   const state = {
-    camera: true,
-    audio: true,
+    camera: false,        // True only after camera permissions are granted
+    audio: false,         // True only after microphone permissions are granted
     internet: true,
     encoder: false,
     youtube: false,
+    hasCameraPermission: false,
+    hasAudioPermission: false,
     isPrepared: false,
     isLive: false,
     service: {
@@ -23,8 +25,11 @@ document.addEventListener('DOMContentLoaded', () => {
       description: ''
     },
     timerInterval: null,
-    secondsElapsed: 0
+    secondsElapsed: 0,
+    churchSettings: { data: null, isLoaded: false }
   };
+
+  
 
   // Default Template Data
   const DEFAULT_TEMPLATE = {
@@ -43,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
     statusEncoder: document.getElementById('status-encoder'),
     statusYoutube: document.getElementById('status-youtube'),
     overallStatus: document.getElementById('overall-status'),
+    cameraDetail: document.getElementById('camera-detail'),
+    audioDetail: document.getElementById('audio-detail'),
+    btnRequestPermissions: document.getElementById('btn-request-permissions'),
 
     // Service Setup Form
     serviceForm: document.getElementById('service-form'),
@@ -50,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
     serviceDescription: document.getElementById('service-description'),
     serviceTime: document.getElementById('service-time'),
     btnLoadTemplate: document.getElementById('btn-load-template'),
+    serviceTemplate: document.getElementById('service-template'),
 
     // Live Manager Section
     prepConsole: document.getElementById('prep-console'),
@@ -102,7 +111,20 @@ document.addEventListener('DOMContentLoaded', () => {
     newPasswordButton: document.getElementById('new-password-button'),
     passwordUpdatedSection: document.getElementById('password-updated-section'),
     passwordUpdatedMessage: document.getElementById('password-updated-message'),
-    continueSignInButton: document.getElementById('continue-sign-in-button')
+    continueSignInButton: document.getElementById('continue-sign-in-button'),
+
+    // Church Settings (Phase 5B)
+    badgeRole: document.getElementById('badge-role'),
+    settingsCard: document.getElementById('settings-card'),
+    churchNameInput: document.getElementById('church-name'),
+    churchLogoInput: document.getElementById('church-logo'),
+    churchTimezoneInput: document.getElementById('church-timezone'),
+    churchEmailInput: document.getElementById('church-email'),
+    defaultEventTitleInput: document.getElementById('default-event-title'),
+    defaultEventDescriptionInput: document.getElementById('default-event-description'),
+    youtubeChannelIdInput: document.getElementById('youtube-channel-id'),
+    settingsSaveMessage: document.getElementById('settings-save-message'),
+    btnSaveSettings: document.getElementById('btn-save-settings')
   };
 initDefaults();
 
@@ -140,8 +162,8 @@ initDefaults();
 
     try {
       const result = await window.churchLiveSupabase.church.getName();
-      if (result.success && result.data?.churchName) {
-        elements.churchNameText.textContent = result.data.churchName;
+      if (result.success && result.data) {
+        elements.churchNameText.textContent = result.data?.churchName || result.data;
         if (elements.churchNameDisplay) {
           elements.churchNameDisplay.style.opacity = '1';
         }
@@ -206,6 +228,13 @@ initDefaults();
     }
   });
 
+  // Attach save settings button listener for SUPER_ADMIN users
+  if (elements.btnSaveSettings) {
+    elements.btnSaveSettings.addEventListener('click', async (e) => {
+      await saveChurchSettings();
+    });
+  }
+
   let authenticationCheckPromise = null;
 
   async function validateSessionAndShowDashboard() {
@@ -228,6 +257,9 @@ initDefaults();
 
       isAuthenticatedAndActive = true;
       showDashboardSection();
+      await initRoleAwareUI();
+      await loadChurchSettings();
+      await updateRoleBadge();
       loadEventsFromSupabase();
       return true;
     })();
@@ -306,6 +338,30 @@ initDefaults();
       console.log('[Church Live] loadEventsFromSupabase: Supabase get result:', result);
       if (result.success) {
         displayEvents(result.data || []);
+        // Restore Livestream Manager only if this browser session has a prepared event ID
+        const preparedEventId = sessionStorage.getItem('preparedEventId');
+        if (preparedEventId) {
+          const events = result.data || [];
+          const sessionDraftEvent = events.find(e => e.id === preparedEventId && e.status === 'DRAFT');
+          if (sessionDraftEvent) {
+            state.isPrepared = true;
+            state.service.id = sessionDraftEvent.id;
+            state.service.title = sessionDraftEvent.title;
+            state.service.description = sessionDraftEvent.description;
+            elements.flowTitle.textContent = sessionDraftEvent.title;
+            const schedDate = new Date(sessionDraftEvent.scheduledAt);
+            elements.flowTime.textContent = `Scheduled for: ${schedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} at ${schedDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+            elements.prepConsole.classList.remove('disabled');
+            elements.prepConsole.classList.add('active-preview');
+            elements.prepBadge.textContent = 'Prepared';
+            elements.prepBadge.className = 'badge prep-badge-ready';
+            elements.consolePlaceholder.classList.add('hidden');
+            elements.consoleFlow.classList.remove('hidden');
+            const feedSim = document.querySelector('.preview-feed-sim');
+            if (feedSim) feedSim.classList.add('sim-on');
+            updateStatusUI();
+          }
+        }
       } else {
         showSupabaseError(`Failed to load events: ${result.error?.message}`);
       }
@@ -329,7 +385,8 @@ initDefaults();
     });
     
     // Update history count
-    elements.historyCount.textContent = `${events.length} archived`;
+    const completedCount = events.filter(e => e.status === 'COMPLETED').length;
+    elements.historyCount.textContent = `${completedCount} archived`;
   }
   
   /**
@@ -354,8 +411,21 @@ initDefaults();
       const minutes = Math.floor(durationMs / 60000);
       durationText = ` — ${minutes}m`;
     }
-    
-    row.innerHTML = `
+
+    // Build the row HTML with a delete button for DRAFT events
+    let deleteCellHtml = '';
+    if (event.status === 'DRAFT') {
+      deleteCellHtml = `
+        <td class="cell-actions">
+          <button class="btn-delete-draft" data-event-id="${event.id}" title="Delete this draft service">
+            <span class="delete-icon">🗑</span>
+          </button>
+        </td>`;
+    } else {
+      deleteCellHtml = `<td class="cell-actions"></td>`;
+    }
+
+        row.innerHTML = `
       <td class="cell-date">
         <div class="primary-text">${dateFormatted}</div>
         <div class="secondary-text">${timeFormatted}</div>
@@ -365,7 +435,7 @@ initDefaults();
         <div class="secondary-text">${event.description || ''}${durationText}</div>
       </td>
       <td>
-        <span class="service-status-pill ${event.status === 'LIVE' ? 'status-live' : 'status-completed'}">
+        <span class="service-status-pill ${event.status === 'LIVE' ? 'status-live' : event.status === 'DRAFT' ? 'status-draft' : 'status-completed'}">
           ${event.status === 'LIVE' ? 'Live' : event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}
         </span>
       </td>
@@ -378,8 +448,20 @@ initDefaults();
           <span class="yt-link disabled">No archive</span>
         `}
       </td>
+      ${deleteCellHtml}
     `;
-    
+
+    // Attach delete handler for DRAFT events
+    if (event.status === 'DRAFT') {
+      const deleteBtn = row.querySelector('.btn-delete-draft');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleDeleteDraftEvent(event.id, event.title);
+        });
+      }
+    }
+
     return row;
   }
   
@@ -412,6 +494,234 @@ initDefaults();
       banner.remove();
     }
   }
+
+  // ==========================================================================
+  // 5. PHASE 5B: CHURCH SETTINGS
+  // ==========================================================================
+
+  /**
+   * Handle deletion of a DRAFT event from Recent Services.
+   * @param {string} eventId - The UUID of the event to delete
+   * @param {string} eventTitle - The title of the event (for confirmation dialog)
+   */
+  async function handleDeleteDraftEvent(eventId, eventTitle) {
+    const confirmed = confirm(
+      `Are you sure you want to delete the draft service "${eventTitle}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const result = await window.churchLiveSupabase.events.delete(eventId);
+      if (!result.success) {
+        console.error('[Church Live] Failed to delete draft event:', result.error);
+        alert('Failed to delete the draft service. Please try again.');
+        return;
+      }
+
+      // Check if the deleted event was the currently prepared event
+      const preparedEventId = sessionStorage.getItem('preparedEventId');
+      if (eventId === preparedEventId) {
+        state.isPrepared = false;
+        state.isLive = false;
+        sessionStorage.removeItem('preparedEventId');
+        // Reset the existing Livestream Manager UI to Inactive / Waiting for Preparation
+        resetLivestreamManagerUI();
+      }
+
+      // Refresh the existing Recent Services list using the existing event-loading mechanism
+      await loadEventsFromSupabase();
+
+      // Update the archived count using the existing COMPLETED-only logic
+      // loadEventsFromSupabase already calls displayEvents which updates historyCount
+    } catch (error) {
+      console.error('[Church Live] Error deleting draft event:', error);
+      alert('An error occurred while deleting the draft service.');
+    }
+  }
+
+  /**
+   * Reset the Livestream Manager UI to Inactive / Waiting for Preparation state.
+   */
+  function resetLivestreamManagerUI() {
+    // Reset state flags
+    state.isPrepared = false;
+    state.isLive = false;
+    state.secondsElapsed = 0;
+
+    // Clear timer
+    if (state.timerInterval) {
+      clearInterval(state.timerInterval);
+      state.timerInterval = null;
+    }
+
+    // Reset UI elements to Inactive state
+    elements.prepConsole.classList.remove('live-mode', 'active-preview');
+    elements.prepConsole.classList.add('disabled');
+    elements.prepBadge.textContent = 'Inactive';
+    elements.prepBadge.className = 'badge prep-badge-inactive';
+    elements.consolePlaceholder.classList.remove('hidden');
+    elements.consoleFlow.classList.add('hidden');
+    elements.flowTime.textContent = 'Waiting for Preparation';
+
+    // Reset feed simulation
+    const feedSim = document.querySelector('.preview-feed-sim');
+    if (feedSim) {
+      feedSim.classList.remove('sim-on', 'live-broadcast');
+      feedSim.querySelector('.feed-sim-text').innerHTML = '🛑 Idle';
+    }
+
+    // Hide both action buttons
+    elements.btnStartStream.classList.add('hidden');
+    elements.btnStopStream.classList.add('hidden');
+
+    // Reset simulated connect button
+    elements.btnSimulateConnect.textContent = '🔗 Simulate API Connect (Prepare OBS & YT)';
+    elements.btnSimulateConnect.disabled = false;
+
+    updateStatusUI();
+  }
+
+  // ==========================================================================
+  // 5. PHASE 5B: CHURCH SETTINGS
+
+  /**
+   * Load church settings from Supabase and populate the form fields.
+   * @returns {Promise<void>}
+   */
+  async function loadChurchSettings() {
+    try {
+      const result = await window.churchLiveSupabase.churchSettings.get();
+      if (!result.success) {
+        console.error('[Church Live] Failed to load church settings:', result.error);
+        return;
+      }
+
+      const settings = result.data;
+      if (!settings) {
+        console.warn('No church settings found in Supabase');
+        return;
+      }
+
+      // Populate form fields (normalizeSettings returns camelCase)
+      elements.churchNameInput.value = settings.churchName || settings.church_name || '';
+      elements.churchLogoInput.value = settings.churchLogo || settings.church_logo || '';
+      elements.churchTimezoneInput.value = settings.churchTimezone || settings.church_timezone || '';
+      elements.churchEmailInput.value = settings.churchEmail || settings.church_email || '';
+      elements.defaultEventTitleInput.value = settings.defaultEventTitle || settings.default_event_title || '';
+      elements.defaultEventDescriptionInput.value = settings.defaultEventDescription || settings.default_event_description || '';
+      elements.youtubeChannelIdInput.value = settings.youtubeChannelId || settings.youtube_channel_id || '';
+
+      // Update the church_settings state object
+      state.churchSettings = {
+        data: settings,
+        isLoaded: true
+      };
+
+      // Update role badge based on user role
+      await updateRoleBadge();
+    } catch (error) {
+      console.error('[Church Live] Failed to load church settings:', error);
+    }
+  }
+
+  /**
+   * Save church settings to Supabase.
+   * @returns {Promise<void>}
+   */
+  async function saveChurchSettings() {
+    try {
+      const settings = {
+        churchName: elements.churchNameInput.value,
+        churchLogo: elements.churchLogoInput.value,
+        churchTimezone: elements.churchTimezoneInput.value,
+        churchEmail: elements.churchEmailInput.value,
+        defaultEventTitle: elements.defaultEventTitleInput.value,
+        defaultEventDescription: elements.defaultEventDescriptionInput.value,
+        youtubeChannelId: elements.youtubeChannelIdInput.value,
+        youtubeConnected: elements.youtubeChannelIdInput.value ? true : false,
+      };
+
+      const result = await window.churchLiveSupabase.churchSettings.update(settings);
+      if (!result.success) {
+        console.error('[Church Live] Failed to save church settings:', result.error);
+        if (elements.settingsSaveMessage) {
+          elements.settingsSaveMessage.textContent = '❌ Failed to save settings.';
+          elements.settingsSaveMessage.style.color = 'var(--color-danger)';
+        }
+        return;
+      }
+
+      console.log('[Church Live] Church settings saved successfully');
+      if (elements.settingsSaveMessage) {
+        elements.settingsSaveMessage.textContent = '✅ Settings saved successfully!';
+        elements.settingsSaveMessage.style.color = 'var(--color-success)';
+        setTimeout(() => {
+          if (elements.settingsSaveMessage) {
+            elements.settingsSaveMessage.textContent = '';
+          }
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('[Church Live] Error saving church settings:', error);
+      if (elements.settingsSaveMessage) {
+        elements.settingsSaveMessage.textContent = '❌ Error saving settings.';
+        elements.settingsSaveMessage.style.color = 'var(--color-danger)';
+      }
+    }
+  }
+
+    /**
+   * Initialize role-aware UI for church settings.
+   * Shows/hides the settings card based on user role.
+   * SUPER_ADMIN-only visibility for Church Settings; ADMIN and non-admins are hidden.
+   * @returns {Promise<void>}
+   */
+  async function initRoleAwareUI() {
+    try {
+      const isSuperAdmin = await window.churchLiveSupabase.roles.isSuperAdmin();
+
+      // Only SUPER_ADMIN can access the Church Settings panel
+      if (isSuperAdmin && elements.settingsCard) {
+        elements.settingsCard.classList.remove('hidden');
+      } else if (elements.settingsCard) {
+        elements.settingsCard.classList.add('hidden');
+      }
+    } catch (error) {
+      console.error('[Church Live] Failed to initialize role-aware UI:', error);
+      if (elements.settingsCard) {
+        elements.settingsCard.classList.add('hidden');
+      }
+    }
+  }
+
+  /**
+   * Update the role badge based on the current user's role.
+   * @returns {Promise<void>}
+   */
+  async function updateRoleBadge() {
+    try {
+      const role = await window.churchLiveSupabase.roles.getCurrentUserRole();
+      if (role?.success && role?.data?.role) {
+        elements.badgeRole.textContent = role.data.role;
+        elements.badgeRole.className = `badge ${role.data.role}`;
+      } else {
+        elements.badgeRole.textContent = 'ROLE_UNKNOWN';
+        elements.badgeRole.className = 'badge';
+      }
+    } catch (error) {
+      console.error('[Church Live] Failed to update role badge:', error);
+      elements.badgeRole.textContent = 'ROLE_UNKNOWN';
+      elements.badgeRole.className = 'badge';
+    }
+  }
+
+  // ==========================================================================
+  // 5. EVENT LISTENERS
+  // ==========================================================================
+
+  /**
+   * Synchronize the Javascript state variables with the HTML DOM indicator circles and text
+   */
   
   // ==========================================================================
   // 5. EVENT LISTENERS
@@ -421,6 +731,9 @@ initDefaults();
    * Synchronize the Javascript state variables with the HTML DOM indicator circles and text
    */
   function updateStatusUI() {
+    // Check if media devices are supported in this browser
+    const mediaSupported = window.churchLiveMediaDevices?.isMediaDevicesSupported() ?? false;
+
     const syncItem = (itemEl, isConnected, connectedText, disconnectedText) => {
       const dot = itemEl.querySelector('.status-dot');
       const label = itemEl.querySelector('.status-text');
@@ -436,13 +749,57 @@ initDefaults();
       }
     };
 
-    syncItem(elements.statusCamera, state.camera, 'CONNECTED', 'OFFLINE');
-    syncItem(elements.statusAudio, state.audio, 'CONNECTED', 'OFFLINE');
+    // Camera status: show different states based on support/permissions/detection
+    if (!mediaSupported) {
+      // Browser doesn't support media devices
+      syncItem(elements.statusCamera, false, 'NOT SUPPORTED', 'NOT SUPPORTED');
+      elements.statusCamera.querySelector('.status-text').textContent = 'NOT SUPPORTED';
+      elements.statusCamera.querySelector('.status-dot').className = 'status-dot red-dot';
+      elements.statusCamera.setAttribute('data-checked', 'false');
+    } else if (!state.hasCameraPermission) {
+      // Permission not yet granted
+      syncItem(elements.statusCamera, false, 'CONNECTED', 'NOT CONNECTED');
+      elements.statusCamera.querySelector('.status-text').textContent = 'NOT CONNECTED';
+      elements.statusCamera.querySelector('.status-dot').className = 'status-dot red-dot';
+      elements.statusCamera.setAttribute('data-checked', 'false');
+    } else if (state.camera) {
+      // Permission granted AND devices detected
+      syncItem(elements.statusCamera, true, 'CONNECTED', 'OFFLINE');
+    } else {
+      // Permission granted but no devices found
+      syncItem(elements.statusCamera, false, 'CONNECTED', 'NO DEVICE');
+      elements.statusCamera.querySelector('.status-text').textContent = 'NO DEVICE';
+      elements.statusCamera.querySelector('.status-dot').className = 'status-dot red-dot';
+      elements.statusCamera.setAttribute('data-checked', 'false');
+    }
+
+    // Audio status: same logic
+    if (!mediaSupported) {
+      syncItem(elements.statusAudio, false, 'NOT SUPPORTED', 'NOT SUPPORTED');
+      elements.statusAudio.querySelector('.status-text').textContent = 'NOT SUPPORTED';
+      elements.statusAudio.querySelector('.status-dot').className = 'status-dot red-dot';
+      elements.statusAudio.setAttribute('data-checked', 'false');
+    } else if (!state.hasAudioPermission) {
+      syncItem(elements.statusAudio, false, 'CONNECTED', 'NOT CONNECTED');
+      elements.statusAudio.querySelector('.status-text').textContent = 'NOT CONNECTED';
+      elements.statusAudio.querySelector('.status-dot').className = 'status-dot red-dot';
+      elements.statusAudio.setAttribute('data-checked', 'false');
+    } else if (state.audio) {
+      syncItem(elements.statusAudio, true, 'CONNECTED', 'OFFLINE');
+    } else {
+      syncItem(elements.statusAudio, false, 'CONNECTED', 'NO DEVICE');
+      elements.statusAudio.querySelector('.status-text').textContent = 'NO DEVICE';
+      elements.statusAudio.querySelector('.status-dot').className = 'status-dot red-dot';
+      elements.statusAudio.setAttribute('data-checked', 'false');
+    }
+
+    // Other status items remain as before (simulated for now)
     syncItem(elements.statusInternet, state.internet, 'STABLE', 'DISCONNECTED');
     syncItem(elements.statusEncoder, state.encoder, 'READY', 'OFFLINE');
     syncItem(elements.statusYoutube, state.youtube, 'PREPARED', 'UNPREPARED');
 
     // Recalculate Overall Health Check badge
+    // Camera and Audio only count as "ready" if devices are actually detected
     const totalChecks = [state.camera, state.audio, state.internet, state.encoder, state.youtube];
     const passedCount = totalChecks.filter(v => v).length;
 
@@ -479,6 +836,20 @@ initDefaults();
     const isYtReady = state.internet && state.youtube;
     toggleChecklistStep(elements.stepYtReady, isYtReady);
 
+    // END/LIVESTREAM button shown when LIVE or PREPARED (not when merely Inactive)
+    // Show button and set appropriate text based on current state
+    if (state.isLive || state.isPrepared) {
+      elements.btnStopStream.classList.remove('hidden');
+      // Set button text based on state: "STOP PRESENTATION" for prepared, "END LIVESTREAM" for live
+      if (state.isPrepared) {
+        elements.btnStopStream.textContent = 'STOP PRESENTATION';
+      } else {
+        elements.btnStopStream.textContent = 'END LIVESTREAM';
+      }
+    } else {
+      elements.btnStopStream.classList.add('hidden');
+    }
+
     // Determine if we can reveal the final "START LIVESTREAM NOW" button
     if (isObsReady && isYtReady) {
       elements.btnSimulateConnect.classList.add('hidden');
@@ -501,19 +872,89 @@ initDefaults();
     }
   }
 
+  /**
+   * Update the status detail text for camera or audio.
+   * @param {HTMLElement} detailEl - The detail element to update.
+   * @param {string} text - The text to display.
+   */
+  function showStatusDetail(detailEl, text) {
+    if (detailEl) {
+      detailEl.textContent = text;
+    }
+  }
+
   // ==========================================================================
   // 5. EVENT LISTENERS
   // ==========================================================================
 
-  // A. Click to Toggle/Simulate Device Statuses (Extremely engaging for client walkthrough!)
-  elements.statusCamera.addEventListener('click', () => {
-    state.camera = !state.camera;
-    updateStatusUI();
-  });
+    // A. Check Media Permissions (Real Device Detection)
+  async function checkMediaPermissions() {
+    if (!window.churchLiveMediaDevices?.isMediaDevicesSupported()) {
+      showStatusDetail(elements.cameraDetail, 'Media devices not supported in this browser');
+      showStatusDetail(elements.audioDetail, 'Media devices not supported in this browser');
+      return;
+    }
 
-  elements.statusAudio.addEventListener('click', () => {
-    state.audio = !state.audio;
+    try {
+      // Request both camera and microphone permissions
+      const result = await window.churchLiveMediaDevices.requestMediaPermissions({ video: true, audio: true });
+
+      if (result.success) {
+        // Permissions granted - enumerate devices
+        const deviceResult = await window.churchLiveMediaDevices.initializeMediaDevices({ video: true, audio: true });
+
+        // Update state based on actual device detection
+        state.camera = deviceResult.videoDevices.length > 0;
+        state.audio = deviceResult.audioDevices.length > 0;
+        state.hasCameraPermission = true;
+        state.hasAudioPermission = true;
+
+        // Update status details with device information
+        if (deviceResult.videoDevices.length > 0) {
+          showStatusDetail(elements.cameraDetail, `Camera permission granted - ${deviceResult.videoDevices.length} video device(s) detected`);
+        } else {
+          showStatusDetail(elements.cameraDetail, 'Camera permission granted - no video devices detected');
+        }
+
+        if (deviceResult.audioDevices.length > 0) {
+          showStatusDetail(elements.audioDetail, `Microphone permission granted - ${deviceResult.audioDevices.length} audio device(s) detected`);
+        } else {
+          showStatusDetail(elements.audioDetail, 'Microphone permission granted - no audio devices detected');
+        }
+
+        // Set up device change listeners for hot-plug/unplug
+        if (window.churchLiveMediaDevices?.onDeviceChange) {
+          window.churchLiveMediaDevices.onDeviceChange((devices) => {
+            const videoDevices = devices.filter(d => d.isVideo);
+            const audioDevices = devices.filter(d => d.isAudio);
+            state.camera = videoDevices.length > 0;
+            state.audio = audioDevices.length > 0;
+            updateStatusUI();
+          });
+        }
+      } else {
+        // Permissions denied or error
+        const errorMsg = result.error ? result.error.message : 'Permission request cancelled';
+        showStatusDetail(elements.cameraDetail, `Camera permission denied: ${errorMsg}`);
+        showStatusDetail(elements.audioDetail, `Microphone permission denied: ${errorMsg}`);
+      }
+    } catch (error) {
+      console.error('[Church Live] Error checking media permissions:', error);
+      showStatusDetail(elements.cameraDetail, 'Error checking camera permissions');
+      showStatusDetail(elements.audioDetail, 'Error checking microphone permissions');
+    }
+
     updateStatusUI();
+  }
+
+  elements.btnRequestPermissions.addEventListener('click', () => {
+    // Show loading state
+    elements.btnRequestPermissions.disabled = true;
+    elements.btnRequestPermissions.textContent = 'Checking permissions...';
+    checkMediaPermissions().finally(() => {
+      elements.btnRequestPermissions.disabled = false;
+      elements.btnRequestPermissions.textContent = 'Grant Camera & Microphone Access';
+    });
   });
 
   elements.statusInternet.addEventListener('click', () => {
@@ -531,14 +972,64 @@ initDefaults();
     updateStatusUI();
   });
 
-  // B. Load Default Template
-  elements.btnLoadTemplate.addEventListener('click', (e) => {
-    e.preventDefault();
-    elements.serviceTitle.value = DEFAULT_TEMPLATE.title;
-    elements.serviceDescription.value = DEFAULT_TEMPLATE.description;
+  // C. Service Template Dropdown
+  const SERVICE_TEMPLATES = [
+    {
+      value: 'sunday-worship',
+      label: 'Sunday Service — Worship + Message',
+      title: 'Sunday Worship Service',
+      description: 'Welcome to our Sunday service livestream! Join us as we worship, hear God\'s Word, and fellowship together.'
+    },
+    {
+      value: 'sunday-worship-bible',
+      label: 'Sunday Service — Worship + Bible Study',
+      title: 'Sunday Worship & Bible Study',
+      description: 'Join us for worship followed by Bible study and discussion.'
+    },
+    {
+      value: 'bible-study',
+      label: 'Bible Study',
+      title: 'Bible Study',
+      description: 'Focused study session on biblical texts and teachings.'
+    },
+    {
+      value: 'youth-meeting',
+      label: 'Youth Meeting',
+      title: 'Youth Meeting',
+      description: 'Weekly youth group gathering and activities.'
+    },
+    {
+      value: 'prayer-meeting',
+      label: 'Prayer Meeting',
+      title: 'Prayer Meeting',
+      description: 'Guided prayer and reflection session.'
+    },
+    {
+      value: 'special-service',
+      label: 'Special Service',
+      title: 'Special Church Service',
+      description: 'Special events and celebrations.'
+    },
+    {
+      value: 'custom',
+      label: 'Custom',
+      title: '',
+      description: ''
+    }
+  ];
+
+  elements.serviceTemplate.addEventListener('change', (e) => {
+    const selectedTemplate = SERVICE_TEMPLATES.find(t => t.value === e.target.value);
+    if (selectedTemplate) {
+      elements.serviceTitle.value = selectedTemplate.title;
+      elements.serviceDescription.value = selectedTemplate.description;
+    } else {
+      elements.serviceTitle.value = '';
+      elements.serviceDescription.value = '';
+    }
   });
 
-  // C. Form Submission / Prepare Workspace
+  // D. Form Submission / Prepare Workspace
   elements.serviceForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -559,6 +1050,10 @@ initDefaults();
       scheduledAt: timeVal,
       status: 'DRAFT'
     });
+    if (state.isPrepared) {
+      showSupabaseError('A livestream is already prepared. Please select an existing service to continue.');
+      return;
+    }
     const createResult = await window.churchLiveSupabase.events.create({
       title: titleVal,
       description: descVal,
@@ -577,6 +1072,11 @@ initDefaults();
 
     // Change Workspace state to Prepared
     state.isPrepared = true;
+    // Store the prepared event ID in sessionStorage so it persists across page refreshes
+    // but not across browser sessions/logins
+    if (createResult.success && createResult.data && createResult.data.id) {
+      sessionStorage.setItem('preparedEventId', createResult.data.id);
+    }
 
     // Update Console Elements
     elements.flowTitle.textContent = titleVal;
@@ -641,6 +1141,7 @@ initDefaults();
     // Toggle CTA Actions
     elements.btnStartStream.classList.add('hidden');
     elements.btnStopStream.classList.remove('hidden');
+    elements.btnStopStream.textContent = 'END LIVESTREAM';
 
     // Start timer counter
     state.secondsElapsed = 0;
@@ -656,69 +1157,112 @@ initDefaults();
 
   // F. STOP STREAM Sequence
   elements.btnStopStream.addEventListener('click', () => {
-    const confirmation = confirm('Are you sure you want to END the Church Livestream broadcast now?');
+    const confirmation = confirm(
+      state.isLive
+        ? 'Are you sure you want to END the Church Livestream broadcast now?'
+        : 'Are you sure you want to cancel the prepared livestream?'
+    );
     if (!confirmation) return;
 
-    // Reset Live states
-    state.isLive = false;
-    clearInterval(state.timerInterval);
+    // Differentiate between LIVE and PREPARED states
+    if (state.isLive) {
+      // LIVE → END LIVESTREAM (existing behavior)
+      
+      // Reset Live states
+      state.isLive = false;
+      clearInterval(state.timerInterval);
 
-    const titleVal = elements.serviceTitle.value.trim();
-    const schedTime = new Date(elements.serviceTime.value);
+      const titleVal = elements.serviceTitle.value.trim();
+      const schedTime = new Date(elements.serviceTime.value);
 
-    // Format current completed time
-    const serviceDateFormatted = schedTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const serviceTimeFormatted = schedTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      // Format current completed time
+      const serviceDateFormatted = schedTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const serviceTimeFormatted = schedTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-    // Append newly completed row to History Logs Table dynamically!
-    const newRow = document.createElement('tr');
-    newRow.innerHTML = `
-      <td class="cell-date">
-        <div class="primary-text">${serviceDateFormatted}</div>
-        <div class="secondary-text">${serviceTimeFormatted}</div>
-      </td>
-      <td class="cell-service">
-        <div class="primary-text">${titleVal}</div>
-        <div class="secondary-text">Broadcasted Live — Duration: ${String(Math.floor(state.secondsElapsed / 60)).padStart(2, '0')}m</div>
-      </td>
-      <td>
-        <span class="service-status-pill status-completed">Completed</span>
-      </td>
-      <td class="cell-yt">
-        <a href="https://youtube.com/watch?v=new_broadcast_sim" target="_blank" class="yt-link">
-          <span class="yt-icon">▶</span> watch archive
-        </a>
-      </td>
-    `;
-    
-    // Insert at top of the table logs
-    elements.recentServicesTable.insertBefore(newRow, elements.recentServicesTable.firstChild);
+      // Append newly completed row to History Logs Table dynamically!
+      const newRow = document.createElement('tr');
+      newRow.innerHTML = `
+        <td class="cell-date">
+          <div class="primary-text">${serviceDateFormatted}</div>
+          <div class="secondary-text">${serviceTimeFormatted}</div>
+        </td>
+        <td class="cell-service">
+          <div class="primary-text">${titleVal}</div>
+          <div class="secondary-text">Broadcasted Live — Duration: ${String(Math.floor(state.secondsElapsed / 60)).padStart(2, '0')}m</div>
+        </td>
+        <td>
+          <span class="service-status-pill status-completed">Completed</span>
+        </td>
+        <td class="cell-yt">
+          <a href="https://youtube.com/watch?v=new_broadcast_sim" target="_blank" class="yt-link">
+            <span class="yt-icon">▶</span> watch archive
+          </a>
+        </td>
+      `;
 
-    // Update history count indicator
-    const currentRowsCount = elements.recentServicesTable.children.length;
-    elements.historyCount.textContent = `${currentRowsCount} archived`;
+      // Insert at top of the table logs
+      elements.recentServicesTable.insertBefore(newRow, elements.recentServicesTable.firstChild);
 
-    // Reset Workspace UI completely
-    elements.prepConsole.className = 'card preparation-console disabled';
-    elements.prepBadge.className = 'badge';
-    elements.prepBadge.textContent = 'Inactive';
-    
-    elements.consolePlaceholder.classList.remove('hidden');
-    elements.consoleFlow.classList.add('hidden');
-    
-    elements.btnStopStream.classList.add('hidden');
-    
-    const feedSim = document.querySelector('.preview-feed-sim');
-    feedSim.className = 'preview-feed-sim';
-    feedSim.querySelector('.feed-sim-text').textContent = 'READY TO BROADCAST';
+      // Update history count indicator
+      const currentRowsCount = elements.recentServicesTable.children.length;
+      elements.historyCount.textContent = `${currentRowsCount} archived`;
 
-    // Clear form title/description to make ready for next one or leave as is
-    state.isPrepared = false;
-    state.encoder = false;
-    state.youtube = false;
-    updateStatusUI();
+      // Reset Workspace UI completely
+      elements.prepConsole.className = 'card preparation-console disabled';
+      elements.prepBadge.className = 'badge';
+      elements.prepBadge.textContent = 'Inactive';
+      
+      elements.consolePlaceholder.classList.remove('hidden');
+      elements.consoleFlow.classList.add('hidden');
+      
+      elements.btnStopStream.classList.add('hidden');
+      
+      const feedSim = document.querySelector('.preview-feed-sim');
+      feedSim.className = 'preview-feed-sim';
+      feedSim.querySelector('.feed-sim-text').textContent = 'READY TO BROADCAST';
 
-    alert('🎉 Awesome! The livestream session has ended. Today\'s service record has been saved successfully in local history.');
+      // Clear form title/description to make ready for next one
+      elements.serviceTitle.value = '';
+      elements.serviceDescription.value = '';
+      elements.serviceTime.value = '';
+
+      state.encoder = false;
+      state.youtube = false;
+      updateStatusUI();
+
+      alert('🎉 Awesome! The livestream session has ended. Today\'s service record has been saved successfully in local history.');
+    } else if (state.isPrepared) {
+      // PREPARED → CANCEL PREPARATION (new behavior)
+      
+      // Clear prepared event ID from sessionStorage
+      sessionStorage.removeItem('preparedEventId');
+
+      // Reset local prepared state
+      state.isPrepared = false;
+
+      // Reset Workspace UI to inactive/waiting state
+      elements.prepConsole.className = 'card preparation-console disabled';
+      elements.prepBadge.className = 'badge';
+      elements.prepBadge.textContent = 'Inactive';
+      
+      elements.consolePlaceholder.classList.remove('hidden');
+      elements.consoleFlow.classList.add('hidden');
+      
+      elements.btnStopStream.classList.add('hidden');
+      
+      const feedSim = document.querySelector('.preview-feed-sim');
+      feedSim.className = 'preview-feed-sim';
+      feedSim.querySelector('.feed-sim-text').textContent = 'READY TO BROADCAST';
+
+      // Clear form title/description to make ready for next one
+      elements.serviceTitle.value = '';
+      elements.serviceDescription.value = '';
+      elements.serviceTime.value = '';
+
+      state.encoder = false;
+      state.youtube = false;
+      updateStatusUI();
+    }
   });
 
   // G. LOGIN Form Submission
@@ -765,10 +1309,13 @@ initDefaults();
   elements.logoutButton.addEventListener('click', async () => {
     const result = await window.churchLiveSupabase.auth.logout();
 
-    if (!result.success) {
+        if (!result.success) {
       elements.loginError.textContent = `❌ ${result.error?.message || 'Logout failed. Please try again.'}`;
       return;
     }
+
+    // Clear prepared event ID from sessionStorage on logout
+    sessionStorage.removeItem('preparedEventId');
 
     isAuthenticatedAndActive = false;
     showLoginSection();

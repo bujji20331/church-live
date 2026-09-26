@@ -145,8 +145,8 @@ function normalizeEvent(event) {
     endedAt: event.ended_at || null,
     status: event.status || 'DRAFT',
     streamingMode: event.streaming_mode || 'CHURCH_EQUIPMENT',
-    videoSource: event.video_source || 'CHURCH_CAMERA',
-    audioSource: event.audio_source || 'YAMAHA_MIXER',
+    videoSource: event.video_source || '',
+    audioSource: event.audio_source || '',
     youtubeBroadcastId: event.youtube_broadcast_id || null,
     youtubeVideoId: event.youtube_video_id || null,
     youtubeUrl: event.youtube_url || null,
@@ -188,7 +188,10 @@ function normalizeSettings(settings) {
   if (!settings) return null;
   return {
     id: settings.id,
-    churchName: settings.church_name || 'Church Live',
+    churchName: settings.church_name || settings.name || 'Church Live',
+    churchLogo: settings.church_logo || settings.logo_url || null,
+    churchTimezone: settings.church_timezone || settings.timezone || null,
+    churchEmail: settings.church_email || settings.contact_email || null,
     defaultEventTitle: settings.default_event_title || 'Sunday Worship Service',
     defaultEventDescription: settings.default_event_description || '',
     youtubeChannelId: settings.youtube_channel_id || null,
@@ -239,11 +242,7 @@ async function getCurrentChurchId() {
  */
 async function getChurchName() {
   if (!isSupabaseReady()) {
-    return {
-      success: false,
-      data: null,
-      error: { message: 'Supabase is not connected.' }
-    };
+    return { success: false, data: null, error: { message: 'Supabase is not connected.' } };
   }
 
   try {
@@ -257,19 +256,17 @@ async function getChurchName() {
       return { success: false, data: null, error: { message: 'Church not found for current user' } };
     }
 
-    const { data: settingsData, error: settingsError } = await supabaseClient
-      .from('church_settings')
-      .select('church_name')
-      .eq('church_id', currentChurchId)
+    const { data, error } = await supabaseClient
+      .from('churches')
+      .select('name')
+      .eq('id', currentChurchId)
       .single();
 
-    if (settingsError) throw settingsError;
+    if (error) throw error;
+
     return {
       success: true,
-      data: {
-        churchName: settingsData.church_name,
-        church_name: settingsData.church_name
-      },
+      data: data?.name || 'Church Live',
       error: null
     };
   } catch (error) {
@@ -277,9 +274,9 @@ async function getChurchName() {
     return { success: false, data: null, error };
   }
 }
-
 /**
  * Get church settings from Supabase.
+ * Also fetches church info from the churches table for the settings UI.
  * @returns {Promise<Object>}
  */
 async function getChurchSettings() {
@@ -292,24 +289,40 @@ async function getChurchSettings() {
   }
 
   try {
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    if (!user || authError) {
-      return { success: false, data: null, error: { message: 'Not authenticated' } };
-    }
-
     const currentChurchId = await getCurrentChurchId();
     if (!currentChurchId) {
       return { success: false, data: null, error: { message: 'Church not found for current user' } };
     }
 
-    const { data, error } = await supabaseClient
+    const { data: settingsData, error: settingsError } = await supabaseClient
       .from('church_settings')
       .select('*')
       .eq('church_id', currentChurchId)
+      .maybeSingle();
+
+    if (settingsError && settingsError.code !== 'PGRST116') throw settingsError;
+
+    const { data: churchData, error: churchError } = await supabaseClient
+      .from('churches')
+      .select('id, name, logo_url, timezone, contact_email')
+      .eq('id', currentChurchId)
       .single();
 
-    if (error) throw error;
-    return normalizeResult(data ? normalizeSettings(data) : null, null);
+    if (churchError) throw churchError;
+
+    const mergedData = {
+      ...(settingsData || {}),
+      church_name: settingsData?.church_name || churchData?.name,
+      church_logo: churchData?.logo_url,
+      church_timezone: churchData?.timezone,
+      church_email: churchData?.contact_email,
+      default_event_title: settingsData?.default_event_title,
+      default_event_description: settingsData?.default_event_description,
+      youtube_channel_id: settingsData?.youtube_channel_id,
+      youtube_connected: settingsData?.youtube_connected,
+    };
+
+    return normalizeResult(mergedData ? normalizeSettings(mergedData) : null, null);
   } catch (error) {
     console.error('[Church Live] Failed to load church settings:', error);
     return normalizeResult(null, error);
@@ -318,6 +331,7 @@ async function getChurchSettings() {
 
 /**
  * Update church settings in Supabase.
+ * Also updates the churches row with name, logo_url, timezone, contact_email.
  * @param {Object} settings
  * @returns {Promise<Object>}
  */
@@ -330,32 +344,61 @@ async function updateChurchSettings(settings) {
     };
   }
 
-  const updateData = {
+  const currentChurchId = await getCurrentChurchId();
+  if (!currentChurchId) {
+    return { success: false, data: null, error: { message: 'Church not found for current user' } };
+  }
+
+  const settingsUpdateData = {
     church_name: settings.churchName || settings.church_name,
     default_event_title: settings.defaultEventTitle || settings.default_event_title,
     default_event_description: settings.defaultEventDescription || settings.default_event_description || null,
     youtube_channel_id: settings.youtubeChannelId || settings.youtube_channel_id || null,
     youtube_connected: settings.youtubeConnected !== undefined
       ? settings.youtubeConnected
-      : settings.youtube_connected || false
+      : settings.youtube_connected || false,
+    church_id: currentChurchId
   };
 
-  const currentChurchId = await getCurrentChurchId();
-  if (!currentChurchId) {
-    return { success: false, data: null, error: { message: 'Church not found for current user' } };
-  }
-  
-  updateData.church_id = currentChurchId;
+  const churchUpdateData = {
+    name: settings.churchName || settings.church_name,
+    logo_url: settings.churchLogo || settings.church_logo,
+    timezone: settings.churchTimezone || settings.church_timezone,
+    contact_email: settings.churchEmail || settings.church_email
+  };
 
   try {
-    const { data, error } = await supabaseClient
+    const { data: settingsData, error: settingsError } = await supabaseClient
       .from('church_settings')
-      .upsert(updateData)
+      .upsert(settingsUpdateData)
       .select('*')
       .single();
 
-    if (error) throw error;
-    return normalizeResult(data ? normalizeSettings(data) : null, null);
+    if (settingsError) throw settingsError;
+
+    const { data: churchData, error: churchError } = await supabaseClient
+      .from('churches')
+      .update(churchUpdateData)
+      .eq('id', currentChurchId)
+      .select('*')
+      .single();
+
+    if (churchError) throw churchError;
+
+    const mergedData = {
+      ...(settingsData || {}),
+      ...(churchData || {}),
+      church_name: settingsData?.church_name || churchData?.name,
+      church_logo: churchData?.logo_url,
+      church_timezone: churchData?.timezone,
+      church_email: churchData?.contact_email,
+      default_event_title: settingsData?.default_event_title,
+      default_event_description: settingsData?.default_event_description,
+      youtube_channel_id: settingsData?.youtube_channel_id,
+      youtube_connected: settingsData?.youtube_connected,
+    };
+
+    return normalizeResult(mergedData ? normalizeSettings(mergedData) : null, null);
   } catch (error) {
     console.error('[Church Live] Failed to update church settings:', error);
     return normalizeResult(null, error);
@@ -813,6 +856,54 @@ async function getCurrentProfile() {
 }
 
 /**
+ * Get the current user's role from their profile.
+ * @returns {Promise<Object>} { success, data: { role }, error }
+ */
+async function getCurrentUserRole() {
+  if (!isSupabaseReady()) {
+    return { success: false, data: null, error: { message: 'Supabase is not connected.' } };
+  }
+
+  try {
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (!user || authError) {
+      return { success: false, data: null, error: { message: 'Not authenticated' } };
+    }
+
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .eq('is_active', true)
+      .single();
+
+    if (error) throw error;
+    return { success: true, data: { role: data?.role || 'VOLUNTEER' }, error: null };
+  } catch (error) {
+    console.error('[Church Live] Failed to load user role:', error);
+    return { success: false, data: null, error };
+  }
+}
+
+/**
+ * Check if the current user is a SUPER_ADMIN.
+ * @returns {Promise<boolean>}
+ */
+async function isSuperAdmin() {
+  const result = await getCurrentUserRole();
+  return result.success && result.data?.role === 'SUPER_ADMIN';
+}
+
+/**
+ * Check if the current user is at least an ADMIN.
+ * @returns {Promise<boolean>}
+ */
+async function isAdminOrSuperAdmin() {
+  const result = await getCurrentUserRole();
+  return result.success && (result.data?.role === 'SUPER_ADMIN' || result.data?.role === 'ADMIN');
+}
+
+/**
  * Set up auth state change listener.
  * @param {Function} callback - Called with (event, session) on auth changes
  * @returns {Function} Unsubscribe function
@@ -858,6 +949,13 @@ window.churchLiveSupabase = {
     onAuthStateChange: onAuthStateChange,
     resetPasswordForEmail: resetPasswordForEmail,
     updatePassword: updatePassword
+  },
+
+  // Role helpers (Phase 5B)
+  roles: {
+    getCurrentUserRole: getCurrentUserRole,
+    isSuperAdmin: isSuperAdmin,
+    isAdminOrSuperAdmin: isAdminOrSuperAdmin
   },
 
   // Data access (Phase 3)

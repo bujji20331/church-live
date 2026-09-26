@@ -24,9 +24,9 @@
           <p class="logo-subtitle">Livestream Control Center</p>
         </div>
       </div>
-      <div class="user-badge">
+      <div class="user-badge" id="user-badge">
         <span class="badge-dot pulse"></span>
-        <span class="badge-role">Volunteer Mode</span>
+        <span class="badge-role" id="badge-role">Volunteer Mode</span>
       </div>
       <div class="church-name" id="church-name-display" style="opacity: 0.6; font-size: 0.9em; margin-left: 12px;">
         <span class="church-name-label">Church:</span>
@@ -99,34 +99,34 @@
           <h2 class="card-title">SYSTEM STATUS</h2>
           <span class="status-badge" id="overall-status">CHECKING...</span>
         </div>
-        <p class="card-instruction">Ensure all indicators are green (🟢) before going live. Click on any status to toggle/simulate its hardware connection.</p>
-        
+        <p class="card-instruction">Ensure all indicators are green (🟢) before going live. Use the permission buttons below to grant camera and microphone access.</p>
+
         <ul class="status-list">
-          <li class="status-item" id="status-camera" data-checked="true">
+          <li class="status-item" id="status-camera" data-checked="false">
             <div class="status-item-left">
               <span class="item-icon">📷</span>
               <div class="item-info">
                 <span class="item-name">Camera Connection</span>
-                <span class="item-detail">Panasonic HC-MD12M via USB Capture</span>
+                <span class="item-detail" id="camera-detail">Camera permission not requested</span>
               </div>
             </div>
             <div class="status-indicator">
-              <span class="status-dot green-dot"></span>
-              <span class="status-text">CONNECTED</span>
+              <span class="status-dot red-dot"></span>
+              <span class="status-text">NOT CONNECTED</span>
             </div>
           </li>
-          
-          <li class="status-item" id="status-audio" data-checked="true">
+
+          <li class="status-item" id="status-audio" data-checked="false">
             <div class="status-item-left">
               <span class="item-icon">🎤</span>
               <div class="item-info">
                 <span class="item-name">Audio Input</span>
-                <span class="item-detail">Yamaha MG16XU USB Audio Mixer</span>
+                <span class="item-detail" id="audio-detail">Microphone permission not requested</span>
               </div>
             </div>
             <div class="status-indicator">
-              <span class="status-dot green-dot"></span>
-              <span class="status-text">CONNECTED</span>
+              <span class="status-dot red-dot"></span>
+              <span class="status-text">NOT CONNECTED</span>
             </div>
           </li>
           
@@ -172,24 +172,40 @@
             </div>
           </li>
         </ul>
+
+      <!-- Media Permission Buttons -->
+      <div class="permission-buttons">
+        <button id="btn-request-permissions" class="btn btn-secondary btn-block">
+          <span class="btn-icon">🎥🎤</span>
+          <span>Grant Camera & Microphone Access</span>
+        </button>
       </div>
 
       <!-- Service Config Form Card -->
       <div class="card service-card">
         <div class="card-header">
           <h2 class="card-title">TODAY'S SERVICE</h2>
-          <button class="btn-text" id="btn-load-template">Load Default Template</button>
+          <select id="service-template" class="template-dropdown">
+            <option value="">Select Template...</option>
+            <option value="sunday-worship">Sunday Service — Worship + Message</option>
+            <option value="sunday-worship-bible">Sunday Service — Worship + Bible Study</option>
+            <option value="bible-study">Bible Study</option>
+            <option value="youth-meeting">Youth Meeting</option>
+            <option value="prayer-meeting">Prayer Meeting</option>
+            <option value="special-service">Special Service</option>
+            <option value="custom">Custom</option>
+          </select>
         </div>
         <form id="service-form" novalidate>
           <div class="form-group">
             <label for="service-title">Service Title</label>
-            <input type="text" id="service-title" placeholder="e.g. Sunday Worship Service" value="Sunday Worship Service" required>
+            <input type="text" id="service-title" placeholder="e.g. Sunday Worship Service" required>
             <p class="form-help">Enter a welcoming title for the livestream broadcast.</p>
           </div>
           
           <div class="form-group">
             <label for="service-description">Description</label>
-            <textarea id="service-description" rows="3" placeholder="Enter service description..." required>Welcome to our Sunday service livestream! Join us as we sing praises, listen to the Word, and fellowship together.</textarea>
+            <textarea id="service-description" rows="3" placeholder="Enter service description..." required></textarea>
             <p class="form-help">This description will show up directly on YouTube for viewers.</p>
           </div>
 
@@ -353,6 +369,46 @@
         </div>
       </div>
 
+      <!-- Church Settings Panel (SUPER_ADMIN only) -->
+      <div class="card settings-card hidden" id="settings-card">
+        <div class="card-header">
+          <h2 class="card-title">Church Settings</h2>
+          <span class="badge badge-primary">SUPER_ADMIN ONLY</span>
+        </div>
+        <div class="settings-form">
+          <div class="form-group">
+            <label for="church-name">Church Name</label>
+            <input type="text" id="church-name" placeholder="Church Name">
+          </div>
+          <div class="form-group">
+            <label for="church-logo">Logo URL</label>
+            <input type="text" id="church-logo" placeholder="https://...">
+          </div>
+          <div class="form-group">
+            <label for="church-timezone">Timezone</label>
+            <input type="text" id="church-timezone" placeholder="UTC-05:00">
+          </div>
+          <div class="form-group">
+            <label for="church-email">Contact Email</label>
+            <input type="email" id="church-email" placeholder="admin@church.org">
+          </div>
+          <div class="form-group">
+            <label for="default-event-title">Default Event Title</label>
+            <input type="text" id="default-event-title" placeholder="Sunday Worship Service">
+          </div>
+          <div class="form-group">
+            <label for="default-event-description">Default Event Description</label>
+            <textarea id="default-event-description" rows="3" placeholder="Welcome to our Sunday service..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="youtube-channel-id">YouTube Channel ID</label>
+            <input type="text" id="youtube-channel-id" placeholder="UC...">
+          </div>
+          <button type="button" id="btn-save-settings" class="btn btn-primary btn-full">Save Settings</button>
+      <div id="settings-save-message" class="alert alert-info"></div>
+        </div>
+      </div>
+
     </section>
 
   </main>
@@ -365,7 +421,8 @@
   </footer>
 
   <script src="js/config.js"></script>
-   <script src="js/supabase.js"></script>
-   <script src="js/app.js"></script>
+  <script src="js/supabase-v2.js"></script>
+  <script src="js/media-devices.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
