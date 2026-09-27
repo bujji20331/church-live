@@ -262,6 +262,7 @@ initDefaults();
 
       isAuthenticatedAndActive = true;
       showDashboardSection();
+      await window.churchLiveYouTube.init();
       await initRoleAwareUI();
       await loadChurchSettings();
       await updateRoleBadge();
