@@ -72,7 +72,7 @@ function updateYouTubeUI() {
   const settingsInput = document.getElementById("youtube-channel-id");
   if (statusEl) { statusEl.classList.toggle("status-on", status.connected); statusEl.classList.toggle("status-off", !status.connected); const dot = statusEl.querySelector(".status-dot"); if (dot) dot.classList.toggle("connected", status.connected); const text = statusEl.querySelector(".status-text"); if (text) text.textContent = status.connected ? "Connected" : "Not Connected"; }
   if (detailEl) { detailEl.textContent = status.connected ? "YouTube connected: " + (status.channelTitle || status.channelId) + " (" + new Date(status.connectedAt).toLocaleDateString() + ")" : "YouTube not connected"; }
-  if (connectBtn) { if (status.connected) { connectBtn.textContent = "YouTube Connected"; connectBtn.disabled = true; connectBtn.classList.add("btn-success"); connectBtn.classList.remove("btn-primary"); } else { connectBtn.textContent = "Connect YouTube"; connectBtn.disabled = false; connectBtn.classList.add("btn-primary"); connectBtn.classList.remove("btn-success"); } }
+  if (connectBtn) { if (status.connected) { connectBtn.textContent = "Reconnect YouTube"; connectBtn.disabled = false; connectBtn.classList.add("btn-success"); connectBtn.classList.remove("btn-primary"); } else { connectBtn.textContent = "Connect YouTube"; connectBtn.disabled = false; connectBtn.classList.add("btn-primary"); connectBtn.classList.remove("btn-success"); } }
   if (settingsInput && status.connected && status.channelId) { settingsInput.value = status.channelId; settingsInput.readOnly = true; }
   const stepYtReady = document.getElementById("step-yt-ready"); if (stepYtReady) stepYtReady.classList.toggle("checked", status.connected);
 }

@@ -188,13 +188,44 @@ serve(async (req) => {
 
     const { refresh_token } = tokenData;
 
+    // Retrieve the authenticated YouTube channel using the access token
+    let channelId = "";
+    let channelTitle = "";
+    const channelsResp = await fetch(
+      "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+      {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      }
+    );
+
+    if (!channelsResp.ok) {
+      const errBody = await channelsResp.text();
+      console.error("YouTube channels lookup failed:", channelsResp.status, errBody);
+      return new Response(
+        JSON.stringify({ error: "YouTube channel lookup failed" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+      );
+    }
+
+    const channelsData = await channelsResp.json();
+    if (!channelsData.items || channelsData.items.length === 0 || !channelsData.items[0].id) {
+      console.error("YouTube channels lookup returned no valid channel");
+      return new Response(
+        JSON.stringify({ error: "No YouTube channel found for this account" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+      );
+    }
+
+    channelId = channelsData.items[0].id;
+    channelTitle = channelsData.items[0].snippet?.title || "";
+
     const { error } = await supabase
       .from("youtube_connections")
       .upsert(
         {
           church_id: churchId,
-          channel_id: "",
-          channel_title: "",
+          channel_id: channelId,
+          channel_title: channelTitle,
           connected_at: new Date().toISOString(),
           refresh_token: refresh_token
         },
