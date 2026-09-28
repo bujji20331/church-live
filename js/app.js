@@ -615,7 +615,12 @@ initDefaults();
       elements.churchEmailInput.value = settings.churchEmail || settings.church_email || '';
       elements.defaultEventTitleInput.value = settings.defaultEventTitle || settings.default_event_title || '';
       elements.defaultEventDescriptionInput.value = settings.defaultEventDescription || settings.default_event_description || '';
-      elements.youtubeChannelIdInput.value = settings.youtubeChannelId || settings.youtube_channel_id || '';
+      const ytStatus = window.churchLiveYouTube?.getConnectionStatus();
+      if (ytStatus?.connected && ytStatus.channelId) {
+        // Keep the OAuth-derived channel ID; do not overwrite with church_settings
+      } else {
+        elements.youtubeChannelIdInput.value = settings.youtubeChannelId || settings.youtube_channel_id || '';
+      }
 
       // Update the church_settings state object
       state.churchSettings = {

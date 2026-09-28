@@ -1014,6 +1014,84 @@ async function transitionLocalHelperCommandStatus(
     return normalizeResult(null, error);
   }
 }
+/**
+ * Prepare a YouTube broadcast for an event.
+ * Calls the Edge Function to handle YouTube broadcast preparation.
+ * @param {string} eventId - The UUID of the event to prepare
+ * @returns {Object} Result with success, data, and error
+ */
+async function prepareYouTubeBroadcast(eventId) {
+  if (!isSupabaseReady()) {
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Supabase is not connected.' }
+    };
+  }
+
+  if (!eventId || typeof eventId !== 'string') {
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Invalid eventId provided.' }
+    };
+  }
+
+  try {
+    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError || !session) {
+      return {
+        success: false,
+        data: null,
+        error: { message: 'No active session. Please log in again.' }
+      };
+    }
+
+    const accessToken = session.access_token;
+    if (!accessToken) {
+      return {
+        success: false,
+        data: null,
+        error: { message: 'Unable to retrieve access token.' }
+      };
+    }
+
+    const response = await fetch(
+            `${supabaseConfig.url}/functions/v1/youtube-broadcast`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ eventId })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        data: null,
+        error: { message: result.error || 'Failed to prepare YouTube broadcast' }
+      };
+    }
+
+    return {
+      success: true,
+      data: result,
+      error: null
+    };
+  } catch (error) {
+    console.error('[Church Live] Failed to prepare YouTube broadcast:', error);
+    return {
+      success: false,
+      data: null,
+      error: { message: 'Failed to prepare YouTube broadcast: ' + error.message }
+    };
+  }
+}
 
 // =============================================================================
 // Export
@@ -1075,5 +1153,10 @@ window.churchLiveSupabase = {
     create: createLocalHelperCommand,
     claim: claimLocalHelperCommand,
     transitionStatus: transitionLocalHelperCommandStatus
+  },
+
+  // YouTube Broadcast (Phase 8A)
+  youtube: {
+    prepareBroadcast: prepareYouTubeBroadcast
   }
 };
