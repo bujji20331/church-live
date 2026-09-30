@@ -70,6 +70,19 @@ document.addEventListener('DOMContentLoaded', () => {
     prepBadge: document.getElementById('prep-badge'),
     consolePlaceholder: document.getElementById('console-placeholder'),
     consoleFlow: document.getElementById('console-flow'),
+youtubeUrlInput: document.getElementById('youtube-url-input'),
+
+    // Phone RTMP Settings (only for PHONE_RTMP streaming mode)
+    phoneRTMPToggle: document.getElementById('phone-rtmp-toggle'),
+    phoneRTMPShowButton: document.getElementById('show-phone-rtmp'),
+    phoneRTMPSettings: document.getElementById('phone-rtmp-config'),
+    phoneRTMPServerUrl: document.getElementById('phone-rtmp-server-url'),
+    phoneRTMPStreamKey: document.getElementById('phone-rtmp-stream-key'),
+    phoneRTMPCopyServerUrl: document.getElementById('copy-server-url'),
+    phoneRTMPCopyStreamKey: document.getElementById('copy-stream-key'),
+    phoneRTMPToggleVisibility: document.getElementById('toggle-stream-key'),
+    phoneRTMPLoading: document.getElementById('phone-rtmp-loading'),
+    phoneRTMPError: document.getElementById('phone-rtmp-error'),
     flowTitle: document.getElementById('flow-title'),
     flowTime: document.getElementById('flow-time'),
     
@@ -894,6 +907,59 @@ initDefaults();
     }
   }
 
+  /**
+   * Wait for a local helper command to complete.
+   * @param {string} commandId - The ID of the local helper command
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 30000)
+   * @returns {Promise<Object>} Command result with status, obsResult, etc.
+   */
+  async function waitForCommandCompletion(commandId, timeoutMs = 30000) {
+    if (!commandId) return null;
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const result = await window.churchLiveSupabase.localHelperCommands.getStatus(commandId);
+        if (result.success && result.data) {
+          const status = result.data.status;
+          if (status === 'SUCCEEDED' || status === 'FAILED' || status === 'TIMEOUT') {
+            return result.data;
+          }
+          // If still pending/claimed/running, wait a bit more
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        console.error('[Church Live] Error checking command status:', error);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    // Timeout reached
+    console.error(`[Church Live] Command ${commandId} timed out after ${timeoutMs}ms`);
+    return { status: 'TIMEOUT', obsResult: null };
+  }
+
+  /**
+   * Determine if OBS is actually streaming based on obs_result.
+   * obs_result may contain { streaming: true/false } or null.
+   * @param {*} obsResult - The observation result from the command
+   * @returns {boolean} True if OBS is streaming
+   */
+  function isOBSStreaming(obsResult) {
+    if (!obsResult) return false;
+    if (typeof obsResult === 'object' && 'streaming' in obsResult) {
+      return obsResult.streaming === true;
+    }
+    // If obs_result is a string, try to parse it
+    if (typeof obsResult === 'string') {
+      try {
+        const parsed = JSON.parse(obsResult);
+        return parsed.streaming === true;
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  }
+
   // ==========================================================================
   // 5. EVENT LISTENERS
   // ==========================================================================
@@ -909,6 +975,261 @@ initDefaults();
     try {
       // Request both camera and microphone permissions
       const result = await window.churchLiveMediaDevices.requestMediaPermissions({ video: true, audio: true });
+// ==========================================================================
+// Phone RTMP Settings (PHONE_RTMP streaming mode)
+// ==========================================================================
+
+/**
+ * Show/hide the Phone RTMP settings panel.
+ * Only visible when the prepared event uses PHONE_RTMP streaming mode.
+ */
+function updatePhoneRTMPSettingsVisibility() {
+  const isPhoneRTMP = state.service.streamingMode === 'PHONE_RTMP';
+
+  if (!isPhoneRTMP) {
+    if (elements.phoneRTMPSettings) {
+      elements.phoneRTMPSettings.classList.add('hidden');
+    }
+
+    if (elements.phoneRTMPShowButton) {
+      elements.phoneRTMPShowButton.textContent = 'Show Phone RTMP Settings';
+    }
+
+    clearPhoneRTMPConfig();
+    return;
+  }
+
+  // PHONE_RTMP is selected, but keep the sensitive settings
+  // hidden until the user explicitly clicks "Show Phone RTMP Settings".
+  if (elements.phoneRTMPSettings) {
+    elements.phoneRTMPSettings.classList.add('hidden');
+  }
+
+  if (elements.phoneRTMPShowButton) {
+    elements.phoneRTMPShowButton.textContent = 'Show Phone RTMP Settings';
+  }
+}
+
+/**
+ * Toggle the visibility of the stream key in the UI.
+ * Shows/hides the stream key display based on the current state.
+ */
+function toggleStreamKeyVisibility() {
+  if (state.service.streamingMode === 'PHONE_RTMP' && state.service.streamKey) {
+    elements.phoneRTMPStreamKey.style.display = 'block';
+    elements.phoneRTMPStreamKey.classList.add('visible');
+  } else {
+    elements.phoneRTMPStreamKey.style.display = 'none';
+    elements.phoneRTMPStreamKey.classList.remove('visible');
+  }
+}
+
+/**
+ * Clear all Phone RTMP config values from the UI.
+ */
+function clearPhoneRTMPConfig() {
+  if (elements.phoneRTMPServerUrl) {
+    elements.phoneRTMPServerUrl.value = '';
+  }
+  if (elements.phoneRTMPStreamKey) {
+    elements.phoneRTMPStreamKey.value = '';
+    elements.phoneRTMPStreamKey.type = 'password';
+  }
+  if (elements.phoneRTMPToggleVisibility) {
+    elements.phoneRTMPToggleVisibility.textContent = 'Show';
+  }
+  if (elements.phoneRTMPCopyServerUrl) {
+    elements.phoneRTMPCopyServerUrl.style.display = 'none';
+  }
+  if (elements.phoneRTMPCopyStreamKey) {
+    elements.phoneRTMPCopyStreamKey.style.display = 'none';
+  }
+    if (elements.phoneRTMPError) {
+    elements.phoneRTMPError.style.display = 'none';
+  }
+}
+
+/**
+ * Copy a text value to clipboard.
+ * @param {string} text - The text to copy
+ * @param {HTMLElement} button - The button element to update temporarily
+ */
+async function copyToClipboard(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const originalText = button.textContent;
+    button.textContent = 'Copied!';
+    button.disabled = true;
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.disabled = false;
+    }, 1500);
+  } catch (err) {
+    console.error('[Church Live] Failed to copy:', err);
+  }
+}
+/**
+ * Initialize Phone RTMP event listeners.
+ * Wires up all Phone RTMP related UI event handlers.
+ */
+function initPhoneRTMPEventListeners() {
+  // Toggle Phone RTMP settings visibility
+  if (elements.phoneRTMPToggle) {
+    elements.phoneRTMPToggle.addEventListener('change', () => {
+      updatePhoneRTMPSettingsVisibility();
+    });
+  }
+
+  // Show/Hide Phone RTMP settings button
+  if (elements.phoneRTMPShowButton) {
+    elements.phoneRTMPShowButton.addEventListener('click', () => {
+      if (elements.phoneRTMPSettings) {
+        const isHidden = elements.phoneRTMPSettings.classList.contains('hidden');
+        elements.phoneRTMPSettings.classList.toggle('hidden', !isHidden);
+        elements.phoneRTMPShowButton.textContent = isHidden ? 'Hide Phone RTMP Settings' : 'Show Phone RTMP Settings';
+      }
+    });
+  }
+
+    // Copy Server URL button
+  if (elements.phoneRTMPCopyServerUrl) {
+    elements.phoneRTMPCopyServerUrl.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (elements.phoneRTMPServerUrl && elements.phoneRTMPServerUrl.value) {
+        await copyToClipboard(elements.phoneRTMPServerUrl.value, elements.phoneRTMPCopyServerUrl);
+      }
+    });
+  }
+
+  // Copy Stream Key button
+  if (elements.phoneRTMPCopyStreamKey) {
+    elements.phoneRTMPCopyStreamKey.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (elements.phoneRTMPStreamKey && elements.phoneRTMPStreamKey.value) {
+        await copyToClipboard(elements.phoneRTMPStreamKey.value, elements.phoneRTMPCopyStreamKey);
+      }
+    });
+  }
+
+  // Toggle Stream Key Visibility button
+  if (elements.phoneRTMPToggleVisibility) {
+    elements.phoneRTMPToggleVisibility.addEventListener('click', () => {
+      if (elements.phoneRTMPStreamKey) {
+        const isPassword = elements.phoneRTMPStreamKey.type === 'password';
+        elements.phoneRTMPStreamKey.type = isPassword ? 'text' : 'password';
+        elements.phoneRTMPToggleVisibility.textContent = isPassword ? 'Hide' : 'Show';
+      }
+      toggleStreamKeyVisibility();
+    });
+  }
+}
+
+/** ==========================================================================
+ * Phone RTMP Settings: Fetch configuration from Edge Function
+ * ========================================================================== */
+async function fetchPhoneRTMPConfig(eventId) {
+  if (!eventId) {
+    if (elements.phoneRTMPError) {
+      elements.phoneRTMPError.classList.remove('hidden');
+      elements.phoneRTMPError.textContent = 'No event is prepared. Please prepare the livestream first.';
+    }
+    return;
+  }
+
+  if (elements.phoneRTMPLoading) {
+    elements.phoneRTMPLoading.classList.remove('hidden');
+  }
+  if (elements.phoneRTMPError) {
+    elements.phoneRTMPError.classList.add('hidden');
+    elements.phoneRTMPError.textContent = '';
+  }
+  if (elements.phoneRTMPServerUrl) {
+    elements.phoneRTMPServerUrl.value = '';
+  }
+  if (elements.phoneRTMPStreamKey) {
+    elements.phoneRTMPStreamKey.value = '';
+    elements.phoneRTMPStreamKey.type = 'password';
+  }
+  if (elements.phoneRTMPCopyServerUrl) {
+    elements.phoneRTMPCopyServerUrl.style.display = 'none';
+  }
+  if (elements.phoneRTMPCopyStreamKey) {
+    elements.phoneRTMPCopyStreamKey.style.display = 'none';
+  }
+
+  try {
+    const supabase = window.churchLiveSupabase.getClient();
+    const { data: user } = await supabase.auth.getUser();
+    if (!user) {
+      if (elements.phoneRTMPError) {
+        elements.phoneRTMPError.classList.remove('hidden');
+        elements.phoneRTMPError.textContent = 'Authentication required. Please log in.';
+      }
+      return;
+    }
+
+    const { data, error } = await supabase.functions.invoke('youtube-phone-rtmp-config', {
+      body: { eventId: eventId }
+    });
+
+    if (error) {
+      if (error.status === 401) {
+        if (elements.phoneRTMPError) {
+          elements.phoneRTMPError.classList.remove('hidden');
+          elements.phoneRTMPError.textContent = 'Authentication/permission denied. You may not have access to this event.';
+        }
+      } else if (error.status === 400) {
+        if (elements.phoneRTMPError) {
+          elements.phoneRTMPError.classList.remove('hidden');
+          elements.phoneRTMPError.textContent = error.body?.error || 'Invalid event configuration for PHONE_RTMP.';
+        }
+      } else if (error.status === 404) {
+        if (elements.phoneRTMPError) {
+          elements.phoneRTMPError.classList.remove('hidden');
+          elements.phoneRTMPError.textContent = 'Event not found or access denied.';
+        }
+      } else {
+        if (elements.phoneRTMPError) {
+          elements.phoneRTMPError.classList.remove('hidden');
+          elements.phoneRTMPError.textContent = 'Failed to retrieve Phone RTMP configuration.';
+        }
+      }
+      return;
+    }
+
+    if (data && data.success && data.streamConfig) {
+      const { serverUrl, streamKey } = data.streamConfig;
+      if (elements.phoneRTMPServerUrl) {
+        elements.phoneRTMPServerUrl.value = serverUrl || '';
+      }
+      if (elements.phoneRTMPStreamKey) {
+        elements.phoneRTMPStreamKey.value = streamKey || '';
+        elements.phoneRTMPStreamKey.type = 'password';
+      }
+      if (elements.phoneRTMPCopyServerUrl) {
+        elements.phoneRTMPCopyServerUrl.style.display = '';
+      }
+      if (elements.phoneRTMPCopyStreamKey) {
+        elements.phoneRTMPCopyStreamKey.style.display = 'inline-block';
+      }
+    } else {
+      if (elements.phoneRTMPError) {
+        elements.phoneRTMPError.classList.remove('hidden');
+        elements.phoneRTMPError.textContent = 'Unexpected response from server.';
+      }
+    }
+  } catch (err) {
+    console.error('[Church Live] Error fetching Phone RTMP config:', err);
+    if (elements.phoneRTMPError) {
+      elements.phoneRTMPError.classList.remove('hidden');
+      elements.phoneRTMPError.textContent = 'Failed to retrieve Phone RTMP configuration.';
+    }
+  } finally {
+    if (elements.phoneRTMPLoading) {
+      elements.phoneRTMPLoading.classList.add('hidden');
+    }
+  }
+}
 
       if (result.success) {
         // Permissions granted - enumerate devices
@@ -1259,38 +1580,68 @@ initDefaults();
       return;
     }
 
-    state.isLive = true;
+    // Wait for the command to complete
+    const commandId = createResult.data?.id;
+    if (!commandId) {
+      alert('Failed to get command ID for START_STREAM.');
+      return;
+    }
 
-    // Change layout styling to Live Red State
-    elements.prepConsole.classList.remove('active-preview');
-    elements.prepConsole.classList.add('live-mode');
-    
-    elements.prepBadge.textContent = '🔴 LIVE';
-    elements.prepBadge.className = 'badge prep-badge-live';
+    const commandResult = await waitForCommandCompletion(commandId);
 
-    const feedSim = document.querySelector('.preview-feed-sim');
-    feedSim.classList.add('live-broadcast');
-    feedSim.querySelector('.feed-sim-text').innerHTML = '🔴 BROADCASTING LIVE NOW';
+    if (commandResult?.status !== 'SUCCEEDED') {
+      showSupabaseError(`START_STREAM command failed: ${commandResult?.status || 'unknown'}`);
+      return;
+    }
 
-    // Toggle CTA Actions
-    elements.btnStartStream.classList.add('hidden');
-    elements.btnStopStream.classList.remove('hidden');
-    elements.btnStopStream.textContent = 'END LIVESTREAM';
+    // Inspect the observation result
+    const obsResult = commandResult.obsResult;
+    if (!obsResult) {
+      showSupabaseError('No observation result received for START_STREAM.');
+      return;
+    }
 
-    // Start timer counter
-    state.secondsElapsed = 0;
-    elements.flowTime.textContent = `🔴 Streaming Live — 00:00:00`;
-    state.timerInterval = setInterval(() => {
-      state.secondsElapsed++;
-      const hrs = String(Math.floor(state.secondsElapsed / 3600)).padStart(2, '0');
-      const mins = String(Math.floor((state.secondsElapsed % 3600) / 60)).padStart(2, '0');
-      const secs = String(state.secondsElapsed % 60).padStart(2, '0');
-      elements.flowTime.textContent = `🔴 Streaming Live — ${hrs}:${mins}:${secs}`;
-    }, 1000);
+    // Use the existing isOBSStreaming helper
+    const isStreaming = isOBSStreaming(obsResult);
+
+    if (isStreaming) {
+      // OBS is actually streaming — enable encoder and go live
+      state.isLive = true;
+      state.encoder = true;
+      // Change layout styling to Live Red State
+      elements.prepConsole.classList.remove('active-preview');
+      elements.prepConsole.classList.add('live-mode');
+
+      elements.prepBadge.textContent = '🔴 LIVE';
+      elements.prepBadge.className = 'badge prep-badge-live';
+
+      const feedSim = document.querySelector('.preview-feed-sim');
+      feedSim.classList.add('live-broadcast');
+      feedSim.querySelector('.feed-sim-text').innerHTML = '🔴 BROADCASTING LIVE NOW';
+
+      // Toggle CTA Actions
+      elements.btnStartStream.classList.add('hidden');
+      elements.btnStopStream.classList.remove('hidden');
+      elements.btnStopStream.textContent = 'END LIVESTREAM';
+
+      // Start timer counter
+      state.secondsElapsed = 0;
+      elements.flowTime.textContent = `🔴 Streaming Live — 00:00:00`;
+      state.timerInterval = setInterval(() => {
+        state.secondsElapsed++;
+        const hrs = String(Math.floor(state.secondsElapsed / 3600)).padStart(2, '0');
+        const mins = String(Math.floor((state.secondsElapsed % 3600) / 60)).padStart(2, '0');
+        const secs = String(state.secondsElapsed % 60).padStart(2, '0');
+        elements.flowTime.textContent = `🔴 Streaming Live — ${hrs}:${mins}:${secs}`;
+      }, 1000);
+    } else {
+      // OBS is not streaming — treat as failure
+      showSupabaseError(`START_STREAM failed: OBS is not streaming (${obsResult})`);
+    }
   });
 
   // F. STOP STREAM Sequence
-  elements.btnStopStream.addEventListener('click', () => {
+  elements.btnStopStream.addEventListener('click', async () => {
     const confirmation = confirm(
       state.isLive
         ? 'Are you sure you want to END the Church Livestream broadcast now?'
@@ -1300,9 +1651,50 @@ initDefaults();
 
     // Differentiate between LIVE and PREPARED states
     if (state.isLive) {
-      // LIVE → END LIVESTREAM (existing behavior)
+      // LIVE → END LIVESTREAM (via Local Helper)
       
-      // Reset Live states
+      // Create STOP_STREAM local helper command in Supabase
+      const churchId = await getCurrentChurchId();
+      if (!churchId) {
+        alert('Could not retrieve church ID. Cannot stop stream.');
+        return;
+      }
+
+      const preparedEventId = sessionStorage.getItem('preparedEventId');
+      if (!preparedEventId) {
+        alert('No prepared event found. Cannot stop stream.');
+        return;
+      }
+
+      const idempotencyKey = crypto.randomUUID();
+
+      const createResult = await window.churchLiveSupabase.localHelperCommands.create(
+        churchId,
+        'STOP_STREAM',
+        preparedEventId,
+        idempotencyKey
+      );
+
+      if (!createResult.success) {
+        showSupabaseError(`Failed to create STOP_STREAM command: ${createResult.error?.message}`);
+        return;
+      }
+
+      // Wait for the command to complete
+      const commandId = createResult.data?.id;
+      if (!commandId) {
+        alert('Failed to get command ID for STOP_STREAM.');
+        return;
+      }
+
+      const commandResult = await waitForCommandCompletion(commandId);
+
+      if (commandResult?.status !== 'SUCCEEDED') {
+        showSupabaseError(`STOP_STREAM command failed: ${commandResult?.status || 'unknown'}`);
+        return;
+      }
+
+      // Command succeeded — now reset live states
       state.isLive = false;
       clearInterval(state.timerInterval);
 
@@ -1516,6 +1908,9 @@ initDefaults();
       showLoginSection();
     });
   }
+
+  // Initialize Phone RTMP event listeners
+  initPhoneRTMPEventListeners();
 
   // L. NEW PASSWORD Form Submission
   if (elements.newPasswordForm) {

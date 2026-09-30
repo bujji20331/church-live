@@ -91,6 +91,7 @@ async function createYouTubeBroadcast(accessToken: string, title: string, descri
   const body = { snippet: { title, description, scheduledStartTime }, status: { privacyStatus: "private" } };
   const resp = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await resp.json();
+  console.log(`[YT-BROADCAST] HTTP status: ${resp.status}, statusText: ${resp.statusText}, data: ${JSON.stringify(data)}`);
   if (!resp.ok || !data.id) return null;
   return data.id;
 }
@@ -148,10 +149,21 @@ async function verifyBroadcastBoundToStream(accessToken: string, broadcastId: st
   return boundStreamId === streamId;
 }
 
-async function updateEventWithYouTubeIds(eventId: string, churchId: string, broadcastId: string, streamId: string): Promise<boolean> {
+async function updateEventWithYouTubeIds(eventId: string, churchId: string, broadcastId: string, streamId: string, currentYoutubeUrl: string | null = null): Promise<boolean> {
+  const updateData: any = {
+    youtube_broadcast_id: broadcastId,
+    youtube_stream_id: streamId,
+    updated_at: new Date().toISOString()
+  };
+
+  // Only populate youtube_url if not already set (preserve manually entered URLs)
+  if (!currentYoutubeUrl) {
+    updateData.youtube_url = `https://youtube.com/watch?v=${broadcastId}`;
+  }
+
   const { error } = await supabase
     .from("events")
-    .update({ youtube_broadcast_id: broadcastId, youtube_stream_id: streamId, updated_at: new Date().toISOString() })
+    .update(updateData)
     .eq("id", eventId)
     .eq("church_id", churchId);
   if (error) { console.error("[YT-BROADCAST] db-update-failed", error.message); return false; }
@@ -219,6 +231,14 @@ serve(async (req) => {
     ]);
 
     if (broadcastValid && streamValid && boundValid) {
+      // If youtube_url is missing but broadcast ID is known, fill it safely
+      if (!event.youtube_url && event.youtube_broadcast_id) {
+        await supabase
+          .from("events")
+          .update({ youtube_url: `https://youtube.com/watch?v=${event.youtube_broadcast_id}`, updated_at: new Date().toISOString() })
+          .eq("id", eventId)
+          .eq("church_id", auth.churchId);
+      }
       return new Response(
         JSON.stringify({ success: true, broadcastId: event.youtube_broadcast_id, streamId: event.youtube_stream_id, message: "Broadcast already prepared" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
@@ -277,7 +297,7 @@ serve(async (req) => {
   }
 
   // 10. Update event with YouTube IDs (scoped by church_id)
-  const dbOk = await updateEventWithYouTubeIds(eventId, auth.churchId, broadcastId, streamId);
+  const dbOk = await updateEventWithYouTubeIds(eventId, auth.churchId, broadcastId, streamId, event.youtube_url);
   if (!dbOk) {
     await deleteYouTubeStream(accessToken, streamId);
     await deleteYouTubeBroadcast(accessToken, broadcastId);

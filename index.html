@@ -279,6 +279,40 @@
                   <span class="stream-key-label">RTMP Stream Key:</span>
                   <span class="stream-key-mask">•••• •••• •••• 92j3</span>
                 </div>
+
+                <!-- Phone RTMP Settings Section (only for PHONE_RTMP streaming mode) -->
+                <div id="phone-rtmp-config" class="phone-rtmp-section hidden">
+                  <div class="phone-rtmp-header">
+                    <h4>Phone RTMP Configuration</h4>
+                    <button type="button" id="show-phone-rtmp" class="btn btn-sm btn-secondary">Show Phone RTMP Settings</button>
+                  </div>
+
+                  <div id="phone-rtmp-loading" class="alert alert-info hidden" role="alert">
+                    Loading Phone RTMP configuration...
+                  </div>
+
+                  <div id="phone-rtmp-error" class="alert alert-danger hidden" role="alert"></div>
+
+                  <div class="phone-rtmp-fields hidden">
+                    <div class="form-group">
+                      <label for="phone-rtmp-server-url">Server URL</label>
+                      <div class="input-group">
+                        <input type="text" id="phone-rtmp-server-url" class="form-control" readonly placeholder="Server URL will appear here">
+                        <button type="button" id="copy-server-url" class="btn btn-outline-secondary" title="Copy to clipboard">📋</button>
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="phone-rtmp-stream-key">Stream Key</label>
+                      <div class="input-group">
+                        <input type="password" id="phone-rtmp-stream-key" class="form-control" readonly placeholder="Stream Key will appear here">
+                        <button type="button" id="toggle-stream-key" class="btn btn-outline-secondary" title="Show/Hide">👁️</button>
+                        <button type="button" id="copy-stream-key" class="btn btn-outline-secondary" title="Copy to clipboard">📋</button>
+                      </div>
+                      <small class="form-text text-muted">⚠️ Sensitive credential - copy and paste to your RTMP client.</small>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
