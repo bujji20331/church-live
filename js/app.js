@@ -505,6 +505,24 @@ initDefaults();
       document.querySelector('.dashboard-container').prepend(banner);
     }
   }
+/**
+   * Show an informational notification in the UI.
+   * @param {string} message
+   */
+  function showInfoNotice(message) {
+    // Add info banner if it doesn't exist
+    if (!document.getElementById('info-notification')) {
+      const banner = document.createElement('div');
+      banner.id = 'info-notification';
+      banner.className = 'alert alert-info';
+      banner.innerHTML = `
+        <div class="alert-content">
+          <span class="alert-message">${message}</span>
+        </div>
+      `;
+      document.querySelector('.dashboard-container').prepend(banner);
+    }
+  }
   
   /**
    * Hide the Supabase error banner.
@@ -1567,7 +1585,7 @@ async function fetchPhoneRTMPConfig(eventId) {
   // E. GO LIVE Sequence
   elements.btnStartStream.addEventListener('click', async () => {
     if (!USE_LOCAL_HELPER) {
-      showSupabaseError("Start streaming in OBS. YouTube goes live automatically.");
+      showInfoNotice("Start streaming in OBS. YouTube goes live automatically.");
       return;
     }
     if (!state.internet || !state.youtube) {
@@ -1676,7 +1694,7 @@ async function fetchPhoneRTMPConfig(eventId) {
 
     // Differentiate between LIVE and PREPARED states
     if (!USE_LOCAL_HELPER) {
-      showSupabaseError("Stop streaming in OBS, then end the stream in YouTube Studio.");
+      showInfoNotice("Stop streaming in OBS, then end the stream in YouTube Studio.");
     }
 
     if (state.isLive) {
