@@ -1017,10 +1017,13 @@ async function transitionLocalHelperCommandStatus(
 /**
  * Prepare a YouTube broadcast for an event.
  * Calls the Edge Function to handle YouTube broadcast preparation.
- * @param {string} eventId - The UUID of the event to prepare
+   * @param {string} eventId - The UUID of the event to prepare
+ * @param {Object} options - Optional configuration
+ * @param {boolean} options.autoStart - Whether to auto-start the broadcast
+ * @param {string} options.privacyStatus - Privacy status: 'private', 'unlisted', or 'public'
  * @returns {Object} Result with success, data, and error
  */
-async function prepareYouTubeBroadcast(eventId) {
+async function prepareYouTubeBroadcast(eventId, options = {}) {
   if (!isSupabaseReady()) {
     return {
       success: false,
@@ -1064,7 +1067,11 @@ async function prepareYouTubeBroadcast(eventId) {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ eventId })
+        body: JSON.stringify({
+          eventId,
+          autoStart: options.autoStart === true,
+          privacyStatus: options.privacyStatus
+        })
       }
     );
 

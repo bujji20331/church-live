@@ -32,7 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   
 
-  // Default Template Data
+  const USE_LOCAL_HELPER = false;
+
+// Default Template Data
   const DEFAULT_TEMPLATE = {
     title: 'Sunday Worship Service',
     description: 'Welcome to our Sunday service livestream! Join us as we sing praises, listen to the Word, and fellowship together.'
@@ -1495,6 +1497,25 @@ async function fetchPhoneRTMPConfig(eventId) {
     // Refresh the events table from Supabase
     await loadEventsFromSupabase();
 
+    // Prepare YouTube broadcast
+    const prepareBtn = document.getElementById('btn-prepare');
+    const originalBtnHtml = prepareBtn ? prepareBtn.innerHTML : '';
+    if (prepareBtn) {
+      prepareBtn.disabled = true;
+      prepareBtn.textContent = 'Preparing...';
+    }
+    const prepareResult = await window.churchLiveSupabase.youtube.prepareBroadcast(createResult.data.id, { autoStart: true, privacyStatus: 'unlisted' });
+    if (prepareBtn) {
+      prepareBtn.disabled = false;
+      prepareBtn.innerHTML = originalBtnHtml;
+    }
+    if (!prepareResult.success) {
+      showSupabaseError(`YouTube preparation failed: ${prepareResult.error?.message}`);
+      state.isPrepared = false;
+      sessionStorage.removeItem('preparedEventId');
+      return;
+    }
+
     // Change Workspace state to Prepared
     state.isPrepared = true;
     // Store the prepared event ID in sessionStorage so it persists across page refreshes
@@ -1545,8 +1566,12 @@ async function fetchPhoneRTMPConfig(eventId) {
 
   // E. GO LIVE Sequence
   elements.btnStartStream.addEventListener('click', async () => {
-    if (!state.camera || !state.audio || !state.internet || !state.encoder || !state.youtube) {
-      alert('⚠️ Cannot start livestream. All system statuses must be green and fully online first!');
+    if (!USE_LOCAL_HELPER) {
+      showSupabaseError("Start streaming in OBS. YouTube goes live automatically.");
+      return;
+    }
+    if (!state.internet || !state.youtube) {
+      alert('⚠️ Cannot start livestream. Internet and YouTube must be ready first!');
       return;
     }
 
@@ -1650,48 +1675,54 @@ async function fetchPhoneRTMPConfig(eventId) {
     if (!confirmation) return;
 
     // Differentiate between LIVE and PREPARED states
+    if (!USE_LOCAL_HELPER) {
+      showSupabaseError("Stop streaming in OBS, then end the stream in YouTube Studio.");
+    }
+
     if (state.isLive) {
-      // LIVE → END LIVESTREAM (via Local Helper)
+      // LIVE → END LIVESTREAM
       
-      // Create STOP_STREAM local helper command in Supabase
-      const churchId = await getCurrentChurchId();
-      if (!churchId) {
-        alert('Could not retrieve church ID. Cannot stop stream.');
-        return;
-      }
+      if (USE_LOCAL_HELPER) {
+        // Create STOP_STREAM local helper command in Supabase
+        const churchId = await getCurrentChurchId();
+        if (!churchId) {
+          alert('Could not retrieve church ID. Cannot stop stream.');
+          return;
+        }
 
-      const preparedEventId = sessionStorage.getItem('preparedEventId');
-      if (!preparedEventId) {
-        alert('No prepared event found. Cannot stop stream.');
-        return;
-      }
+        const preparedEventId = sessionStorage.getItem('preparedEventId');
+        if (!preparedEventId) {
+          alert('No prepared event found. Cannot stop stream.');
+          return;
+        }
 
-      const idempotencyKey = crypto.randomUUID();
+        const idempotencyKey = crypto.randomUUID();
 
-      const createResult = await window.churchLiveSupabase.localHelperCommands.create(
-        churchId,
-        'STOP_STREAM',
-        preparedEventId,
-        idempotencyKey
-      );
+        const createResult = await window.churchLiveSupabase.localHelperCommands.create(
+          churchId,
+          'STOP_STREAM',
+          preparedEventId,
+          idempotencyKey
+        );
 
-      if (!createResult.success) {
-        showSupabaseError(`Failed to create STOP_STREAM command: ${createResult.error?.message}`);
-        return;
-      }
+        if (!createResult.success) {
+          showSupabaseError(`Failed to create STOP_STREAM command: ${createResult.error?.message}`);
+          return;
+        }
 
-      // Wait for the command to complete
-      const commandId = createResult.data?.id;
-      if (!commandId) {
-        alert('Failed to get command ID for STOP_STREAM.');
-        return;
-      }
+        // Wait for the command to complete
+        const commandId = createResult.data?.id;
+        if (!commandId) {
+          alert('Failed to get command ID for STOP_STREAM.');
+          return;
+        }
 
-      const commandResult = await waitForCommandCompletion(commandId);
+        const commandResult = await waitForCommandCompletion(commandId);
 
-      if (commandResult?.status !== 'SUCCEEDED') {
-        showSupabaseError(`STOP_STREAM command failed: ${commandResult?.status || 'unknown'}`);
-        return;
+        if (commandResult?.status !== 'SUCCEEDED') {
+          showSupabaseError(`STOP_STREAM command failed: ${commandResult?.status || 'unknown'}`);
+          return;
+        }
       }
 
       // Command succeeded — now reset live states

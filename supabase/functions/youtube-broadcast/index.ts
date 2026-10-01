@@ -86,9 +86,13 @@ async function getGoogleAccessToken(refreshToken: string): Promise<string | null
   return tokenData.access_token;
 }
 
-async function createYouTubeBroadcast(accessToken: string, title: string, description: string, scheduledStartTime: string): Promise<string | null> {
-  const url = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet,status";
-  const body = { snippet: { title, description, scheduledStartTime }, status: { privacyStatus: "private" } };
+async function createYouTubeBroadcast(accessToken: string, title: string, description: string, scheduledStartTime: string, autoStart: boolean = false, privacyStatus: string = "private"): Promise<string | null> {
+  const url = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet,status,contentDetails";
+  const body = {
+    snippet: { title, description, scheduledStartTime },
+    status: { privacyStatus: privacyStatus },
+    contentDetails: { enableAutoStart: autoStart, enableAutoStop: false }
+  };
   const resp = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await resp.json();
   console.log(`[YT-BROADCAST] HTTP status: ${resp.status}, statusText: ${resp.statusText}, data: ${JSON.stringify(data)}`);
@@ -103,6 +107,27 @@ async function createYouTubeStream(accessToken: string, title: string): Promise<
   const data = await resp.json();
   if (!resp.ok || !data.id) return null;
   return data.id;
+}
+
+async function getOrCreateMainStream(accessToken: string): Promise<string | null> {
+  const listUrl = `https://www.googleapis.com/youtube/v3/liveStreams?part=id,snippet,cdn,status&mine=true&maxResults=50`;
+  const listResp = await fetch(listUrl, { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!listResp.ok) return null;
+  const listData = await listResp.json();
+  const existing = listData.items?.find((item: any) => item.snippet?.title === "Church Live Main Stream");
+  if (existing?.id) return existing.id;
+
+  const createUrl = "https://www.googleapis.com/youtube/v3/liveStreams?part=snippet,cdn,contentDetails";
+  const createBody = {
+    snippet: { title: "Church Live Main Stream" },
+    cdn: { frameRate: "30fps", ingestionType: "rtmp", resolution: "1080p" },
+    contentDetails: { isReusable: true }
+  };
+  const createResp = await fetch(createUrl, { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(createBody) });
+  if (!createResp.ok) return null;
+  const createData = await createResp.json();
+  if (!createData.id) return null;
+  return createData.id;
 }
 
 async function bindStreamToBroadcast(accessToken: string, broadcastId: string, streamId: string): Promise<boolean> {
@@ -187,9 +212,16 @@ serve(async (req) => {
 
   // Parse request body
   let eventId: string | null = null;
+  let autoStart: boolean = false;
+  let privacyStatus: string = "private";
   try {
     const body = await req.json();
     eventId = body.eventId || null;
+    autoStart = body.autoStart === true;
+    const allowedPrivacy = ["private", "unlisted", "public"];
+    if (body.privacyStatus && allowedPrivacy.includes(body.privacyStatus)) {
+      privacyStatus = body.privacyStatus;
+    }
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });
   }
@@ -276,35 +308,33 @@ serve(async (req) => {
   const broadcastDescription = event.description || "";
 
   // 8. Create YouTube broadcast
-  const broadcastId = await createYouTubeBroadcast(accessToken, broadcastTitle, broadcastDescription, scheduledStartTime);
+  const broadcastId = await createYouTubeBroadcast(accessToken, broadcastTitle, broadcastDescription, scheduledStartTime, autoStart, privacyStatus);
   if (!broadcastId) {
     return new Response(JSON.stringify({ error: "Failed to create YouTube broadcast" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
   }
 
-  // 8. Create YouTube stream
-  const streamId = await createYouTubeStream(accessToken, broadcastTitle);
+  // 9. Get YouTube stream
+  const streamId = await getOrCreateMainStream(accessToken);
   if (!streamId) {
     await deleteYouTubeBroadcast(accessToken, broadcastId);
     return new Response(JSON.stringify({ error: "Failed to create YouTube stream. Broadcast was cleaned up." }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
   }
 
-  // 9. Bind stream to broadcast
+  // 10. Bind stream to broadcast
   const bindOk = await bindStreamToBroadcast(accessToken, broadcastId, streamId);
   if (!bindOk) {
-    await deleteYouTubeStream(accessToken, streamId);
     await deleteYouTubeBroadcast(accessToken, broadcastId);
-    return new Response(JSON.stringify({ error: "Failed to bind stream to broadcast. YouTube resources were cleaned up." }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
+    return new Response(JSON.stringify({ error: "Failed to bind stream to broadcast. YouTube broadcast was cleaned up." }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
   }
 
-  // 10. Update event with YouTube IDs (scoped by church_id)
+  // 11. Update event with YouTube IDs (scoped by church_id)
   const dbOk = await updateEventWithYouTubeIds(eventId, auth.churchId, broadcastId, streamId, event.youtube_url);
   if (!dbOk) {
-    await deleteYouTubeStream(accessToken, streamId);
     await deleteYouTubeBroadcast(accessToken, broadcastId);
-    return new Response(JSON.stringify({ error: "Failed to update event record. YouTube resources were cleaned up." }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
+    return new Response(JSON.stringify({ error: "Failed to update event record. YouTube broadcast was cleaned up." }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
   }
 
-  // 11. Success — return minimal safe data
+  // 12. Success — return minimal safe data
   return new Response(
     JSON.stringify({ success: true, broadcastId, streamId, message: "YouTube broadcast prepared successfully" }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
